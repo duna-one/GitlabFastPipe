@@ -65,7 +65,7 @@ const mainPresets = JSON.stringify({ schemaVersion: 1, presets: [
 ] });
 
 /** <summary>Serves an isolated GitLab-like form and same-origin preset files.</summary> */
-async function openFixture(page: Page, rawByRef: Record<string, string> = { main: mainPresets }): Promise<void> {
+async function openFixture(page: Page, rawByRef: Record<string, string> = { main: mainPresets }, hostStyles?: string): Promise<void> {
   await page.route('https://gitlab.example/**', async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.includes('/-/raw/')) {
@@ -79,6 +79,7 @@ async function openFixture(page: Page, rawByRef: Record<string, string> = { main
     await route.fulfill({ status: 200, contentType: 'text/html', body: fixture });
   });
   await page.goto('https://gitlab.example/team/project/-/pipelines/new?ref=main');
+  if (hostStyles) await page.addStyleTag({ content: hostStyles });
   await page.addScriptTag({ path: contentScript });
   await expect(page.locator('#gfp-root')).toBeVisible();
   await expect(page.getByRole('button', { name: /Server/ })).toBeVisible();
@@ -221,7 +222,7 @@ test('clears owned rows before a dropdown ref change while keeping manual values
 
 test('keeps keyboard focus and uses readable dark-theme colors', async ({ page }) => {
   await page.emulateMedia({ colorScheme: 'dark' });
-  await openFixture(page);
+  await openFixture(page, { main: mainPresets }, 'body { background-color: #111827 !important; color: #f9fafb !important; }');
   await page.addStyleTag({ path: contentCss });
   const preset = page.getByRole('button', { name: 'Server' });
   await preset.focus();
@@ -230,4 +231,21 @@ test('keeps keyboard focus and uses readable dark-theme colors', async ({ page }
   await expect(preset).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('region', { name: 'GitLab Fast Pipe' })).toBeVisible();
   await expect(page.locator('#gfp-root')).toHaveCSS('background-color', 'rgb(31, 41, 55)');
+});
+
+test('follows the host page theme instead of the operating-system preference', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await openFixture(page, { main: mainPresets }, 'body { background-color: #fff !important; color: #111 !important; }');
+  await page.addStyleTag({ path: contentCss });
+  const panel = page.locator('#gfp-root');
+  await expect(panel).toHaveAttribute('data-gfp-theme', 'light');
+  await expect(panel).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.locator('body').evaluate((body) => {
+    (body as HTMLElement).style.setProperty('background-color', '#111827', 'important');
+    (body as HTMLElement).style.setProperty('color', '#f9fafb', 'important');
+  });
+  await expect(panel).toHaveAttribute('data-gfp-theme', 'dark');
+  await expect(panel).toHaveCSS('background-color', 'rgb(31, 41, 55)');
 });

@@ -30,6 +30,7 @@ export function ensurePanel(variablesSection: HTMLElement): HTMLElement {
   if (existing) {
     existing.removeAttribute("aria-live");
     existing.setAttribute("aria-labelledby", PANEL_TITLE_ID);
+    existing.dataset.gfpTheme = detectHostTheme(variablesSection);
     if (existing.nextElementSibling !== variablesSection) {
       variablesSection.before(existing);
     }
@@ -40,9 +41,23 @@ export function ensurePanel(variablesSection: HTMLElement): HTMLElement {
   panel.id = PANEL_ID;
   panel.className = "gfp-panel gl-mt-5 gl-mb-5";
   panel.dataset.gfpRuntime = "async-removal";
+  panel.dataset.gfpTheme = detectHostTheme(variablesSection);
   panel.setAttribute("aria-labelledby", PANEL_TITLE_ID);
   variablesSection.before(panel);
   return panel;
+}
+
+/** <summary>Matches the panel palette to GitLab's visible page background.</summary> */
+function detectHostTheme(anchor: Element): "light" | "dark" {
+  for (let element: Element | null = anchor; element; element = element.parentElement) {
+    const color = getComputedStyle(element).backgroundColor;
+    const components = color.match(/[\d.]+/g)?.map(Number);
+    const [red, green, blue, alpha] = components ?? [];
+    if (red === undefined || green === undefined || blue === undefined || (alpha !== undefined && alpha < 0.95)) continue;
+    const brightness = red * 0.2126 + green * 0.7152 + blue * 0.0722;
+    return brightness < 128 ? "dark" : "light";
+  }
+  return "light";
 }
 
 /**

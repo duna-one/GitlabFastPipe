@@ -70,17 +70,15 @@
   #gfp-root .gfp-preset { padding: 11px 12px; }
 }
 
-@media (prefers-color-scheme: dark) {
-  #gfp-root {
-    --gfp-border: #4b5563;
-    --gfp-border-strong: #7b8794;
-    --gfp-surface: #1f2937;
-    --gfp-surface-subtle: #273446;
-    --gfp-text: #f3f4f6;
-    --gfp-muted: #c2cad5;
-    --gfp-accent: #63a6e9;
-    --gfp-accent-surface: #183a5a;
-    --gfp-danger: #ff9b95;
-    --gfp-danger-surface: #4a2429;
-  }
+#gfp-root[data-gfp-theme="dark"] {
+  --gfp-border: #4b5563;
+  --gfp-border-strong: #7b8794;
+  --gfp-surface: #1f2937;
+  --gfp-surface-subtle: #273446;
+  --gfp-text: #f3f4f6;
+  --gfp-muted: #c2cad5;
+  --gfp-accent: #63a6e9;
+  --gfp-accent-surface: #183a5a;
+  --gfp-danger: #ff9b95;
+  --gfp-danger-surface: #4a2429;
 }
