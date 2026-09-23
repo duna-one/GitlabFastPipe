@@ -122,7 +122,7 @@ test('keeps selection and native rows in sync after rapid tile clicks', async ({
   await expect(page.locator('[data-gitlab-fast-pipe-owned="true"] input[name*="key"]')).toHaveValue('ANDROID');
 });
 
-test('shows details for every selected preset and supports multiple selection', async ({ page }) => {
+test('shows details only for the latest selected preset while keeping multiple selections', async ({ page }) => {
   await openFixture(page);
   await page.addStyleTag({ path: contentCss });
   const panel = page.locator('#gfp-root');
@@ -155,9 +155,10 @@ test('shows details for every selected preset and supports multiple selection', 
   await grid.getByRole('button', { name: 'Android', exact: true }).click();
   await expect(grid.getByRole('button', { name: 'Server', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(grid.getByRole('button', { name: 'Android', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(details).toContainText('Build server');
   await expect(details).toContainText('Build Android');
   await expect(details).toContainText('ANDROID=1');
+  await expect(details).not.toContainText('Build server');
+  await expect(details).not.toContainText('SERVER=1');
   for (const [title, description, variable] of [
     ['Server', 'Build server', 'SERVER=1'],
     ['Android', 'Build Android', 'ANDROID=1']
@@ -172,10 +173,10 @@ test('shows details for every selected preset and supports multiple selection', 
   expect(narrowColumns).toBe(1);
   await expect(grid).toHaveCSS('display', 'grid');
 
-  await grid.getByRole('button', { name: 'Server', exact: true }).click();
-  await expect(details).toContainText('Build Android');
-  await expect(details).not.toContainText('Build server');
   await grid.getByRole('button', { name: 'Android', exact: true }).click();
+  await expect(details).toContainText('Build server');
+  await expect(details).not.toContainText('Build Android');
+  await grid.getByRole('button', { name: 'Server', exact: true }).click();
   await expect(details).toHaveCount(0);
 });
 

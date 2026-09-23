@@ -18,15 +18,17 @@ self-managed GitLab after the user grants the specific HTTPS origin access.
    site. Its panel appears automatically on later visits.
 3. The user selects a ref in GitLab's normal field. The extension reads
    `.gitlab-fast-pipe/presets.json` **from that ref** and displays each preset's
-   names in a compact grid. Descriptions and exact variables appear below the
-   grid for selected presets.
+   names in a compact grid. The description and exact variables for the most
+   recently selected preset appear below the grid.
 4. Selected presets fill GitLab's normal **Variables** fields. The user may
    inspect and edit values.
 5. The user starts the pipeline with GitLab's normal **Run pipeline** button.
 
 Place the panel between ref selection and **Variables**. Show preset names in a
-responsive grid; show descriptions and variable values below it for selected
-presets. Each tile toggles independently, so clicking it again deselects it.
+responsive grid; show the description and variable values below it for the
+most recently selected preset. Each tile toggles independently, so clicking it
+again deselects it. When the last selected tile is deselected, show the details
+of the previous selected tile.
 Provide distinct loading, loaded, file missing, access denied, and format-error
 states without covering GitLab's form. Add no separate start button.
 
@@ -130,8 +132,9 @@ management after launch, and command execution from JSON.
    other pages.
 2. Only presets from the selected ref are shown; a ref change refreshes and
    clears the old selection.
-3. Selected preset titles, descriptions, and every `key=value` pair appear
-   before launch. Multiple presets combine into one set for one pipeline.
+3. The most recently selected preset's title, description, and `key=value`
+   pairs appear below the grid. Multiple presets combine into one set for one
+   pipeline, with all applied values visible in GitLab's native Variables form.
 4. Toggling a tile changes only extension rows; manual rows remain. Duplicate
    key/value pairs create one row, while conflicts cause no partial change.
 5. Missing file, invalid JSON, unsupported schema, access denial, and network

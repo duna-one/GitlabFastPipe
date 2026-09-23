@@ -70,12 +70,7 @@
   overflow-wrap: anywhere;
 }
 #gfp-root .gfp-selected-details:empty { display: none; }
-#gfp-root .gfp-selected-preset + .gfp-selected-preset {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--gfp-border);
-}
-#gfp-root .gfp-selected-preset h3 {
+#gfp-root .gfp-selected-details h3 {
   margin: 0 0 4px;
   color: var(--gfp-text);
   font-size: 14px;

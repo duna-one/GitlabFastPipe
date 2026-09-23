@@ -159,8 +159,10 @@ function createLoadedContent(state: Extract<PanelState, { kind: "loaded" }>, act
   content.append(presets);
 
   const selectedPresets = state.presets.filter((preset) => selectedPresetIds.has(preset.id));
-  if (selectedPresets.length > 0) {
-    content.append(createSelectedPresetDetails(selectedPresets));
+  const lastSelectedId = state.selectedPresetIds?.at(-1);
+  const lastSelectedPreset = selectedPresets.find((preset) => preset.id === lastSelectedId);
+  if (lastSelectedPreset) {
+    content.append(createSelectedPresetDetails(lastSelectedPreset));
   }
 
   if (selectedPresets.length > 0) {
@@ -192,28 +194,21 @@ function createPresetButton(preset: PipelinePreset, selected: boolean, actions: 
 }
 
 /**
- * <summary>Creates safe text details for every selected preset.</summary>
+ * <summary>Creates safe text details for the most recently selected preset.</summary>
  */
-function createSelectedPresetDetails(presets: readonly PipelinePreset[]): HTMLElement {
+function createSelectedPresetDetails(preset: PipelinePreset): HTMLElement {
   const details = document.createElement("div");
   details.className = "gfp-selected-details";
+  const title = document.createElement("h3");
+  title.textContent = preset.title;
+  const description = document.createElement("p");
+  description.className = "gfp-description";
+  description.textContent = preset.description;
+  const variables = document.createElement("p");
+  variables.className = "gfp-variable gl-text-subtle";
+  variables.textContent = preset.variables.map((variable) => `${variable.key}=${variable.value}`).join("; ");
 
-  for (const preset of presets) {
-    const presetDetails = document.createElement("article");
-    presetDetails.className = "gfp-selected-preset";
-
-    const title = document.createElement("h3");
-    title.textContent = preset.title;
-    const description = document.createElement("p");
-    description.className = "gfp-description";
-    description.textContent = preset.description;
-    const variables = document.createElement("p");
-    variables.className = "gfp-variable gl-text-subtle";
-    variables.textContent = preset.variables.map((variable) => `${variable.key}=${variable.value}`).join("; ");
-
-    presetDetails.append(title, description, variables);
-    details.append(presetDetails);
-  }
+  details.append(title, description, variables);
   return details;
 }
 
