@@ -10,12 +10,20 @@
       ]
     },
     {
-      "id": "server-android",
-      "title": "Server and Android",
-      "description": "Run both build groups in one pipeline.",
-      "variables": [
-        { "key": "SERVER", "value": "1" },
-        { "key": "ANDROID", "value": "1" }
+      "group": "Mobile",
+      "presets": [
+        {
+          "id": "android",
+          "title": "Android",
+          "description": "Build the Android app.",
+          "variables": [{ "key": "ANDROID", "value": "1" }]
+        },
+        {
+          "id": "ios",
+          "title": "iOS",
+          "description": "Build the iOS app.",
+          "variables": [{ "key": "IOS", "value": "1" }]
+        }
       ]
     }
   ]

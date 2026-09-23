@@ -25,14 +25,27 @@ currently selected in GitLab. A complete example is available in
       "title": "Server",
       "description": "Build the server components.",
       "variables": [{ "key": "SERVER", "value": "1" }]
+    },
+    {
+      "group": "Mobile",
+      "presets": [
+        {
+          "id": "android",
+          "title": "Android",
+          "description": "Build the Android app.",
+          "variables": [{ "key": "ANDROID", "value": "1" }]
+        }
+      ]
     }
   ]
 }
 ```
 
-Preset IDs and variable keys must be unique within their respective lists.
-Titles, descriptions, and keys are non-empty strings; a variable value is a
-string and may be empty.
+The top-level `presets` list can mix flat presets and groups. A group has a
+non-empty `group` title and a non-empty `presets` list of flat presets; groups
+cannot nest. Entries appear in source order, with group titles shown above
+their tiles. IDs must be unique across all flat and grouped presets. The file
+and list limits are described in the [preset format](docs/presets.md).
 
 ## Development
 

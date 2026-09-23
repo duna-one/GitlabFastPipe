@@ -1,9 +1,9 @@
-import type { PipelinePreset } from "../core/presets";
+import type { PipelinePreset, PresetEntry, PresetGroup } from "../core/presets";
 
 /** The UI state shown while presets are being obtained for a ref. */
 export type PanelState =
   | { kind: "loading"; projectPath: string; ref: string }
-  | { kind: "loaded"; projectPath: string; ref: string; presets: readonly PipelinePreset[]; selectedPresetIds?: readonly string[]; conflictKeys?: readonly string[]; presetConflictKeys?: readonly string[]; unsupported?: boolean }
+  | { kind: "loaded"; projectPath: string; ref: string; presets: readonly PresetEntry[]; selectedPresetIds?: readonly string[]; conflictKeys?: readonly string[]; presetConflictKeys?: readonly string[]; unsupported?: boolean }
   | { kind: "missing"; projectPath: string; ref: string }
   | { kind: "forbidden"; projectPath: string; ref: string }
   | { kind: "format"; projectPath: string; ref: string }
@@ -150,15 +150,10 @@ function createLoadedContent(state: Extract<PanelState, { kind: "loaded" }>, act
     content.append(unsupported);
   }
 
-  const presets = document.createElement("div");
-  presets.className = "gfp-presets";
   const selectedPresetIds = new Set(state.selectedPresetIds);
-  for (const preset of state.presets) {
-    presets.append(createPresetButton(preset, selectedPresetIds.has(preset.id), actions));
-  }
-  content.append(presets);
+  appendPresetEntries(content, state.presets, selectedPresetIds, actions);
 
-  const selectedPresets = state.presets.filter((preset) => selectedPresetIds.has(preset.id));
+  const selectedPresets = flattenPresetEntries(state.presets).filter((preset) => selectedPresetIds.has(preset.id));
   const lastSelectedId = state.selectedPresetIds?.at(-1);
   const lastSelectedPreset = selectedPresets.find((preset) => preset.id === lastSelectedId);
   if (lastSelectedPreset) {
@@ -173,6 +168,62 @@ function createLoadedContent(state: Extract<PanelState, { kind: "loaded" }>, act
     content.append(status);
   }
   return content;
+}
+
+/** <summary>Appends flat preset grids and labeled groups in their JSON document order.</summary> */
+function appendPresetEntries(content: HTMLElement, entries: readonly PresetEntry[], selectedPresetIds: ReadonlySet<string>, actions: PanelActions): void {
+  let flatPresets: PipelinePreset[] = [];
+  let groupIndex = 0;
+  /** <summary>Appends one accumulated run of ungrouped presets.</summary> */
+  const appendFlatPresets = (): void => {
+    if (flatPresets.length > 0) {
+      content.append(createPresetGrid(flatPresets, selectedPresetIds, actions));
+      flatPresets = [];
+    }
+  };
+
+  for (const entry of entries) {
+    if (isPresetGroup(entry)) {
+      appendFlatPresets();
+      content.append(createPresetGroup(entry, ++groupIndex, selectedPresetIds, actions));
+    } else {
+      flatPresets.push(entry);
+    }
+  }
+  appendFlatPresets();
+}
+
+/** <summary>Creates a grid of preset controls in the supplied order.</summary> */
+function createPresetGrid(presets: readonly PipelinePreset[], selectedPresetIds: ReadonlySet<string>, actions: PanelActions): HTMLElement {
+  const grid = document.createElement("div");
+  grid.className = "gfp-presets";
+  for (const preset of presets) {
+    grid.append(createPresetButton(preset, selectedPresetIds.has(preset.id), actions));
+  }
+  return grid;
+}
+
+/** <summary>Creates one accessible named group with its own preset grid.</summary> */
+function createPresetGroup(group: PresetGroup, groupIndex: number, selectedPresetIds: ReadonlySet<string>, actions: PanelActions): HTMLElement {
+  const section = document.createElement("section");
+  section.className = "gfp-preset-group";
+  const title = document.createElement("h3");
+  const titleId = `${PANEL_ID}-group-${groupIndex}`;
+  title.id = titleId;
+  title.textContent = group.group;
+  section.setAttribute("aria-labelledby", titleId);
+  section.append(title, createPresetGrid(group.presets, selectedPresetIds, actions));
+  return section;
+}
+
+/** <summary>Flattens entries in JSON document order for selection details and status.</summary> */
+function flattenPresetEntries(entries: readonly PresetEntry[]): readonly PipelinePreset[] {
+  return entries.flatMap((entry) => isPresetGroup(entry) ? entry.presets : [entry]);
+}
+
+/** <summary>Identifies a named group entry.</summary> */
+function isPresetGroup(entry: PresetEntry): entry is PresetGroup {
+  return "group" in entry;
 }
 
 /**

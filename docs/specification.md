@@ -18,17 +18,21 @@ self-managed GitLab after the user grants the specific HTTPS origin access.
    site. Its panel appears automatically on later visits.
 3. The user selects a ref in GitLab's normal field. The extension reads
    `.gitlab-fast-pipe/presets.json` **from that ref** and displays each preset's
-   names in a compact grid. The description and exact variables for the most
-   recently selected preset appear below the grid.
+   names in a compact grid. A preset file can mix standalone tiles with titled
+   groups of tiles. The description and exact variables for the most recently
+   clicked selected preset appear below the grid.
 4. Selected presets fill GitLab's normal **Variables** fields. The user may
    inspect and edit values.
 5. The user starts the pipeline with GitLab's normal **Run pipeline** button.
 
 Place the panel between ref selection and **Variables**. Show preset names in a
-responsive grid; show the description and variable values below it for the
-most recently selected preset. Each tile toggles independently, so clicking it
-again deselects it. When the last selected tile is deselected, show the details
-of the previous selected tile.
+responsive grid, with group titles above grouped tiles; preserve source order
+for standalone tiles, groups, and their children. Show the description and
+variable values below the grid for the most recently clicked selected preset.
+Each tile toggles independently, so clicking it again deselects it. If the
+most recently clicked preset is deselected, show details for the most recently
+clicked preset that remains selected. When the selection becomes empty, show no
+selected-preset details.
 Provide distinct loading, loaded, file missing, access denied, and format-error
 states without covering GitLab's form. Add no separate start button.
 
@@ -51,12 +55,14 @@ The fixed path is `.gitlab-fast-pipe/presets.json`. It is not included by
       "variables": [{ "key": "SERVER", "value": "1" }]
     },
     {
-      "id": "server-android",
-      "title": "Server and Android",
-      "description": "One pipeline for two job groups",
-      "variables": [
-        { "key": "SERVER", "value": "1" },
-        { "key": "ANDROID", "value": "1" }
+      "group": "Mobile",
+      "presets": [
+        {
+          "id": "android",
+          "title": "Android",
+          "description": "Build the Android app",
+          "variables": [{ "key": "ANDROID", "value": "1" }]
+        }
       ]
     }
   ]
@@ -68,6 +74,12 @@ a unique `id`, non-empty `title` and `description`, and a non-empty `variables`
 array. Every variable requires a non-empty string `key` and a string `value`.
 Keep source order. Duplicate IDs or duplicate keys inside a preset are
 configuration errors. Reject an unknown schema version with a clear error.
+The top-level array may mix flat presets with group objects. A group has exactly
+the non-empty `group` title and a non-empty `presets` array of flat presets;
+groups cannot nest. Top-level entries and flattened presets are each limited to
+100, each preset has at most 50 variables, and the complete JSON file is limited
+to 256 KiB. IDs are unique across all flattened presets. Preserve top-level,
+group, and child order.
 
 Names and descriptions are text only. JSON must contain no JavaScript, HTML,
 commands, launch URLs, or secrets. The extension does not derive variables from
@@ -132,9 +144,10 @@ management after launch, and command execution from JSON.
    other pages.
 2. Only presets from the selected ref are shown; a ref change refreshes and
    clears the old selection.
-3. The most recently selected preset's title, description, and `key=value`
-   pairs appear below the grid. Multiple presets combine into one set for one
-   pipeline, with all applied values visible in GitLab's native Variables form.
+3. The most recently clicked selected preset's title, description, and
+   `key=value` pairs appear below the grid. Multiple presets combine into one
+   set for one pipeline, with all applied values visible in GitLab's native
+   Variables form.
 4. Toggling a tile changes only extension rows; manual rows remain. Duplicate
    key/value pairs create one row, while conflicts cause no partial change.
 5. Missing file, invalid JSON, unsupported schema, access denial, and network

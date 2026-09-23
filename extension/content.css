@@ -32,6 +32,14 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
   margin: 0;
 }
+#gfp-root .gfp-preset-group { display: grid; gap: 8px; }
+#gfp-root .gfp-preset-group h3 {
+  margin: 0;
+  color: var(--gfp-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
 
 #gfp-root .gfp-preset {
   width: 100%;

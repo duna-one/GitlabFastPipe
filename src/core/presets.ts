@@ -19,9 +19,16 @@ export interface PipelinePreset {
   variables: readonly PresetVariable[];
 }
 
+export interface PresetGroup {
+  group: string;
+  presets: readonly PipelinePreset[];
+}
+
+export type PresetEntry = PipelinePreset | PresetGroup;
+
 export interface PresetsDocument {
   schemaVersion: typeof PRESETS_SCHEMA_VERSION;
-  presets: readonly PipelinePreset[];
+  presets: readonly PresetEntry[];
 }
 
 /** Describes a safe, user-displayable preset loading failure. */
@@ -64,50 +71,87 @@ export function parsePresetsJson(json: string): PresetsDocument {
   }
 
   const presetIds = new Set<string>();
-  const presets = value.presets.map((preset, presetIndex) => {
-    if (!isPlainRecord(preset)) {
-      throw formatError(`Preset ${presetIndex + 1} must be an object.`);
+  let flatPresetCount = 0;
+  const presets = value.presets.map((entry, entryIndex) => {
+    const entryNumber = entryIndex + 1;
+    if (!isPlainRecord(entry)) {
+      throw formatError(`Preset entry ${entryNumber} must be an object.`);
     }
-    assertExactKeys(preset, ["id", "title", "description", "variables"], `preset ${presetIndex + 1}`);
-    const id = requireNonEmptyString(preset.id, `Preset ${presetIndex + 1} id`);
-    if (presetIds.has(id)) {
-      throw formatError(`Duplicate preset id: ${id}.`);
-    }
-    presetIds.add(id);
-
-    if (!Array.isArray(preset.variables) || preset.variables.length === 0) {
-      throw formatError(`Preset ${id} must contain a non-empty variables array.`);
-    }
-    if (preset.variables.length > MAX_VARIABLES_PER_PRESET) {
-      throw formatError(`Preset ${id} contains more than ${MAX_VARIABLES_PER_PRESET} variables.`);
-    }
-
-    const keys = new Set<string>();
-    const variables = preset.variables.map((variable, variableIndex) => {
-      if (!isPlainRecord(variable)) {
-        throw formatError(`Variable ${variableIndex + 1} in preset ${id} must be an object.`);
+    if ("group" in entry) {
+      assertExactKeys(entry, ["group", "presets"], `preset group ${entryNumber}`);
+      const group = requireNonEmptyString(entry.group, `Preset group ${entryNumber} name`);
+      if (!Array.isArray(entry.presets) || entry.presets.length === 0) {
+        throw formatError(`Preset group ${group} must contain a non-empty presets array.`);
       }
-      assertExactKeys(variable, ["key", "value"], `variable ${variableIndex + 1} in preset ${id}`);
-      const key = requireNonEmptyString(variable.key, `Variable ${variableIndex + 1} key in preset ${id}`);
-      if (keys.has(key)) {
-        throw formatError(`Duplicate variable key ${key} in preset ${id}.`);
-      }
-      keys.add(key);
-      if (typeof variable.value !== "string") {
-        throw formatError(`Variable ${key} value in preset ${id} must be a string.`);
-      }
-      return Object.freeze({ key, value: variable.value });
-    });
+      const groupPresets = entry.presets.map((preset, presetIndex) => {
+        flatPresetCount = assertFlatPresetLimit(flatPresetCount + 1);
+        return parseFlatPreset(preset, `preset ${presetIndex + 1} in group ${group}`, presetIds);
+      });
+      return Object.freeze({ group, presets: Object.freeze(groupPresets) });
+    }
 
-    return Object.freeze({
-      id,
-      title: requireNonEmptyString(preset.title, `Preset ${id} title`),
-      description: requireNonEmptyString(preset.description, `Preset ${id} description`),
-      variables: Object.freeze(variables),
-    });
+    flatPresetCount = assertFlatPresetLimit(flatPresetCount + 1);
+    return parseFlatPreset(entry, `preset ${entryNumber}`, presetIds);
   });
 
   return Object.freeze({ schemaVersion: PRESETS_SCHEMA_VERSION, presets: Object.freeze(presets) });
+}
+
+/** <summary>Validates and freezes a flat preset entry.</summary> */
+function parseFlatPreset(value: unknown, subject: string, presetIds: Set<string>): PipelinePreset {
+  if (!isPlainRecord(value)) {
+    throw formatError(`${capitalize(subject)} must be an object.`);
+  }
+  assertExactKeys(value, ["id", "title", "description", "variables"], subject);
+  const id = requireNonEmptyString(value.id, `${capitalize(subject)} id`);
+  if (presetIds.has(id)) {
+    throw formatError(`Duplicate preset id: ${id}.`);
+  }
+  presetIds.add(id);
+
+  if (!Array.isArray(value.variables) || value.variables.length === 0) {
+    throw formatError(`Preset ${id} must contain a non-empty variables array.`);
+  }
+  if (value.variables.length > MAX_VARIABLES_PER_PRESET) {
+    throw formatError(`Preset ${id} contains more than ${MAX_VARIABLES_PER_PRESET} variables.`);
+  }
+
+  const keys = new Set<string>();
+  const variables = value.variables.map((variable, variableIndex) => {
+    if (!isPlainRecord(variable)) {
+      throw formatError(`Variable ${variableIndex + 1} in preset ${id} must be an object.`);
+    }
+    assertExactKeys(variable, ["key", "value"], `variable ${variableIndex + 1} in preset ${id}`);
+    const key = requireNonEmptyString(variable.key, `Variable ${variableIndex + 1} key in preset ${id}`);
+    if (keys.has(key)) {
+      throw formatError(`Duplicate variable key ${key} in preset ${id}.`);
+    }
+    keys.add(key);
+    if (typeof variable.value !== "string") {
+      throw formatError(`Variable ${key} value in preset ${id} must be a string.`);
+    }
+    return Object.freeze({ key, value: variable.value });
+  });
+
+  return Object.freeze({
+    id,
+    title: requireNonEmptyString(value.title, `Preset ${id} title`),
+    description: requireNonEmptyString(value.description, `Preset ${id} description`),
+    variables: Object.freeze(variables),
+  });
+}
+
+/** <summary>Enforces the document-wide number of flat preset tiles.</summary> */
+function assertFlatPresetLimit(count: number): number {
+  if (count > MAX_PRESETS_COUNT) {
+    throw formatError(`Preset file contains more than ${MAX_PRESETS_COUNT} presets.`);
+  }
+  return count;
+}
+
+/** <summary>Capitalizes the beginning of an error-message subject.</summary> */
+function capitalize(value: string): string {
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 }
 
 /** <summary>Creates a format error with a stable category.</summary> */

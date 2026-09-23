@@ -1,5 +1,5 @@
 import { fetchPresets, detectGitLabProjectContext, type GitLabProjectContext } from "../core/gitlab";
-import { PresetError, type PipelinePreset } from "../core/presets";
+import { PresetError, type PipelinePreset, type PresetEntry, type PresetGroup } from "../core/presets";
 import { VariableForm } from "./form";
 import { ensurePanel, findVariablesSection, removePanel, renderPanel, type PanelState } from "./ui";
 
@@ -147,7 +147,7 @@ class ContentController {
       kind: "loaded",
       projectPath: context.projectPath,
       ref: context.ref,
-      presets: this.loadedPresets(),
+      presets: this.loadedPresetEntries(),
       selectedPresetIds: this.selectedPresetIds,
       conflictKeys: result.conflictKeys,
       presetConflictKeys: result.presetConflictKeys,
@@ -169,17 +169,25 @@ class ContentController {
 
   private lastState: PanelState | undefined;
 
-  /**
-   * <summary>Returns the currently rendered presets when a button redraw is required.</summary>
-   */
-  private loadedPresets(): readonly PipelinePreset[] {
+  /** <summary>Returns rendered top-level entries when a button redraw is required.</summary> */
+  private loadedPresetEntries(): readonly PresetEntry[] {
     return this.lastState?.kind === "loaded" ? this.lastState.presets : [];
+  }
+
+  /** <summary>Flattens rendered entries in JSON document order for form application and lookup.</summary> */
+  private loadedPresets(): readonly PipelinePreset[] {
+    return this.loadedPresetEntries().flatMap((entry) => this.isPresetGroup(entry) ? entry.presets : [entry]);
   }
 
   /** <summary>Returns requested presets in document order for deterministic variable aggregation.</summary> */
   private selectedPresets(selectedPresetIds: readonly string[]): readonly PipelinePreset[] {
     const ids = new Set(selectedPresetIds);
     return this.loadedPresets().filter((preset) => ids.has(preset.id));
+  }
+
+  /** <summary>Identifies a named top-level preset group.</summary> */
+  private isPresetGroup(entry: PresetEntry): entry is PresetGroup {
+    return "group" in entry;
   }
 
   /**

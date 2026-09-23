@@ -180,6 +180,36 @@ test('shows details only for the latest selected preset while keeping multiple s
   await expect(details).toHaveCount(0);
 });
 
+test('renders mixed flat and grouped presets in order and combines choices across groups', async ({ page }) => {
+  const presets = JSON.stringify({ schemaVersion: 1, presets: [
+    { id: 'server', title: 'Server', description: 'Build server', variables: [{ key: 'SERVER', value: '1' }] },
+    { group: 'Mobile builds', presets: [
+      { id: 'android', title: 'Android', description: 'Build Android', variables: [{ key: 'ANDROID', value: '1' }] },
+      { id: 'ios', title: 'iOS', description: 'Build iOS', variables: [{ key: 'IOS', value: '1' }] }
+    ] },
+    { id: 'release', title: 'Release', description: 'Release build', variables: [{ key: 'RELEASE', value: 'yes' }] }
+  ] });
+  await openFixture(page, { main: presets });
+  const panel = page.locator('#gfp-root');
+  const entryOrder = await panel.locator('.gfp-list').evaluate((list) =>
+    Array.from(list.children)
+      .filter((element) => element.classList.contains('gfp-presets') || element.classList.contains('gfp-preset-group'))
+      .map((element) => element.classList.contains('gfp-preset-group') ? 'group' : 'flat'));
+  expect(entryOrder).toEqual(['flat', 'group', 'flat']);
+  await expect(panel.getByRole('region', { name: 'Mobile builds' })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Server', exact: true })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Android', exact: true })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Release', exact: true })).toBeVisible();
+
+  await panel.getByRole('button', { name: 'Android', exact: true }).click();
+  await panel.getByRole('button', { name: 'Server', exact: true }).click();
+  await expect(panel.locator('.gfp-selected-details')).toContainText('Build server');
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"]')).toHaveCount(2);
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"] input[name*="key"]').nth(0)).toHaveValue('SERVER');
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"] input[name*="key"]').nth(1)).toHaveValue('ANDROID');
+  expect(await page.evaluate(() => (window as typeof window & { pipelineSubmissions: number }).pipelineSubmissions)).toBe(0);
+});
+
 test('wraps long preset names inside grid buttons', async ({ page }) => {
   const title = 'Релизный сервер и Android с дополнительными проверками';
   const presets = JSON.stringify({ schemaVersion: 1, presets: [
