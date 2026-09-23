@@ -20,6 +20,7 @@ export interface PanelActions {
 
 /** The durable id used to make injection idempotent. */
 export const PANEL_ID = "gfp-root";
+const PANEL_TITLE_ID = `${PANEL_ID}-title`;
 
 /**
  * <summary>Creates or reuses the panel directly before GitLab's Variables section.</summary>
@@ -27,6 +28,8 @@ export const PANEL_ID = "gfp-root";
 export function ensurePanel(variablesSection: HTMLElement): HTMLElement {
   const existing = document.getElementById(PANEL_ID);
   if (existing) {
+    existing.removeAttribute("aria-live");
+    existing.setAttribute("aria-labelledby", PANEL_TITLE_ID);
     if (existing.nextElementSibling !== variablesSection) {
       variablesSection.before(existing);
     }
@@ -36,7 +39,8 @@ export function ensurePanel(variablesSection: HTMLElement): HTMLElement {
   const panel = document.createElement("section");
   panel.id = PANEL_ID;
   panel.className = "gfp-panel gl-mt-5 gl-mb-5";
-  panel.setAttribute("aria-live", "polite");
+  panel.dataset.gfpRuntime = "async-removal";
+  panel.setAttribute("aria-labelledby", PANEL_TITLE_ID);
   variablesSection.before(panel);
   return panel;
 }
@@ -45,15 +49,27 @@ export function ensurePanel(variablesSection: HTMLElement): HTMLElement {
  * <summary>Renders a safe text-only preset panel for the current loading state.</summary>
  */
 export function renderPanel(panel: HTMLElement, state: PanelState, actions: PanelActions): void {
+  const focusedElement = document.activeElement;
+  const focusWasInsidePanel = focusedElement instanceof HTMLElement && panel.contains(focusedElement);
+  const focusedPresetId = focusWasInsidePanel ? focusedElement?.getAttribute("data-gitlab-fast-pipe-preset-id") : null;
+  const focusWasOnClear = focusWasInsidePanel && (focusedElement as HTMLElement).classList.contains("gfp-clear");
+
   panel.replaceChildren();
   panel.append(createHeading(state));
 
   if (state.kind === "loaded") {
     panel.append(createLoadedContent(state, actions));
-    return;
+  } else {
+    panel.append(createStatusMessage(state));
   }
 
-  panel.append(createStatusMessage(state));
+  if (focusWasInsidePanel) {
+    const focusedControl = focusedPresetId
+      ? Array.from(panel.querySelectorAll<HTMLElement>("[data-gitlab-fast-pipe-preset-id]"))
+        .find((candidate) => candidate.getAttribute("data-gitlab-fast-pipe-preset-id") === focusedPresetId)
+      : focusWasOnClear ? panel.querySelector<HTMLElement>(".gfp-clear:not(:disabled)") : null;
+    (focusedControl ?? panel.querySelector<HTMLElement>(`#${PANEL_TITLE_ID}`))?.focus();
+  }
 }
 
 /**
@@ -88,6 +104,8 @@ export function findVariablesSection(page: ParentNode = document): HTMLElement |
 function createHeading(state: PanelState): HTMLElement {
   const header = document.createElement("header");
   const title = document.createElement("h2");
+  title.id = PANEL_TITLE_ID;
+  title.tabIndex = -1;
   title.textContent = "GitLab Fast Pipe";
   const context = document.createElement("p");
   context.className = "gfp-context";
@@ -106,18 +124,20 @@ function createLoadedContent(state: Extract<PanelState, { kind: "loaded" }>, act
   if (state.conflictKeys && state.conflictKeys.length > 0) {
     const conflict = document.createElement("p");
     conflict.className = "gfp-conflict gfp-error gl-text-danger";
+    conflict.setAttribute("role", "alert");
     conflict.textContent = `Variables already entered manually: ${state.conflictKeys.join(", ")}. Remove or rename them before choosing this preset.`;
     content.append(conflict);
   }
   if (state.unsupported) {
     const unsupported = document.createElement("p");
     unsupported.className = "gfp-error";
+    unsupported.setAttribute("role", "status");
     unsupported.textContent = "This GitLab Variables form is not supported. You can still enter variables manually.";
     content.append(unsupported);
   }
 
-  for (const preset of state.presets) {
-    content.append(createPresetButton(preset, preset.id === state.selectedPresetId, actions));
+  for (const [index, preset] of state.presets.entries()) {
+    content.append(createPresetButton(preset, index, preset.id === state.selectedPresetId, actions));
   }
 
   const clear = document.createElement("button");
@@ -127,24 +147,38 @@ function createLoadedContent(state: Extract<PanelState, { kind: "loaded" }>, act
   clear.disabled = !state.selectedPresetId;
   clear.addEventListener("click", actions.onClear);
   content.append(clear);
+
+  if (state.selectedPresetId) {
+    const selectedPreset = state.presets.find((preset) => preset.id === state.selectedPresetId);
+    if (selectedPreset) {
+      const status = document.createElement("p");
+      status.className = "gfp-status";
+      status.setAttribute("role", "status");
+      status.textContent = `Preset selected: ${selectedPreset.title}.`;
+      content.append(status);
+    }
+  }
   return content;
 }
 
 /**
  * <summary>Creates one preset control using text nodes for all remote configuration.</summary>
  */
-function createPresetButton(preset: PipelinePreset, selected: boolean, actions: PanelActions): HTMLElement {
+function createPresetButton(preset: PipelinePreset, index: number, selected: boolean, actions: PanelActions): HTMLElement {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "gfp-preset btn btn-default gl-display-block gl-text-left gl-mb-3";
   button.dataset.gitlabFastPipePresetId = preset.id;
   button.setAttribute("aria-pressed", String(selected));
+  button.setAttribute("aria-label", preset.title);
 
   const title = document.createElement("strong");
   title.textContent = preset.title;
   const description = document.createElement("span");
+  description.id = `gfp-description-${index}`;
   description.className = "gfp-description gl-display-block";
   description.textContent = preset.description;
+  button.setAttribute("aria-describedby", description.id);
   const variables = document.createElement("span");
   variables.className = "gfp-variable gl-display-block gl-text-subtle";
   variables.textContent = preset.variables.map((variable) => `${variable.key}=${variable.value}`).join("; ");
@@ -160,6 +194,7 @@ function createPresetButton(preset: PipelinePreset, selected: boolean, actions: 
 function createStatusMessage(state: Exclude<PanelState, { kind: "loaded" }>): HTMLElement {
   const message = document.createElement("p");
   message.className = state.kind === "loading" ? "gfp-status" : "gfp-status gfp-error";
+  message.setAttribute("role", state.kind === "loading" ? "status" : "alert");
   message.textContent = getStatusText(state.kind);
   return message;
 }

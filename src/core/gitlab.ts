@@ -167,6 +167,10 @@ function refFromUrl(url: URL): string | null {
 
 /** <summary>Reads the selected ref from common GitLab form controls.</summary> */
 function refFromDom(document: MinimalDocument): string | null {
+  const selectedRef = document.querySelector("[data-testid='ref-select'] button .gl-new-dropdown-button-text")?.textContent?.trim();
+  if (selectedRef) {
+    return selectedRef;
+  }
   const element = document.querySelector("input[name='ref']")
     ?? document.querySelector("input[name='ref_name']")
     ?? document.querySelector("[data-testid='ref-selector'] input");

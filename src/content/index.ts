@@ -14,6 +14,9 @@ class ContentController {
   private variablesSection: HTMLElement | undefined;
   private observer: MutationObserver | undefined;
   private refreshQueued = false;
+  private refreshEpoch = 0;
+  private pendingClear: Promise<void> = Promise.resolve();
+  private replayingRefChoice = false;
 
   /**
    * <summary>Starts SPA navigation and DOM observers, then renders the current form once.</summary>
@@ -27,16 +30,17 @@ class ContentController {
     document.addEventListener("pjax:end", this.scheduleRefresh);
     document.addEventListener("input", this.handleRefEvent, true);
     document.addEventListener("change", this.handleRefEvent, true);
+    document.addEventListener("click", this.handleRefChoice, true);
     this.observer = new MutationObserver(this.scheduleRefresh);
     this.observer.observe(document.documentElement, { childList: true, subtree: true });
     window.setInterval(this.scheduleRefresh, 1000);
-    this.refresh();
+    void this.refresh();
   }
 
   /**
    * <summary>Refreshes the UI after a ref, project, page, or Variables container change.</summary>
    */
-  private refresh(): void {
+  private async refresh(): Promise<void> {
     this.refreshQueued = false;
     const variablesSection = this.isRunPipelineRoute() ? findVariablesSection() : null;
     const context = variablesSection ? detectGitLabProjectContext(location.href, document) : null;
@@ -53,10 +57,15 @@ class ContentController {
 
     this.abortController?.abort();
     this.selectionAbortController?.abort();
-    this.form?.clearOwned();
-    this.form = new VariableForm(variablesSection);
-    this.variablesSection = variablesSection;
+    const previousForm = this.form;
+    const epoch = ++this.refreshEpoch;
+    this.form = undefined;
     this.currentKey = key;
+    this.variablesSection = variablesSection;
+    this.pendingClear = this.pendingClear.then(() => previousForm?.clearOwned());
+    await this.pendingClear;
+    if (epoch !== this.refreshEpoch) return;
+    this.form = new VariableForm(variablesSection);
     const abortController = new AbortController();
     this.abortController = abortController;
     this.render({ kind: "loading", projectPath: context.projectPath, ref: context.ref });
@@ -119,10 +128,12 @@ class ContentController {
   /**
    * <summary>Clears extension-owned variables after an explicit user action.</summary>
    */
-  private clearSelection = (): void => {
+  private clearSelection = async (): Promise<void> => {
     this.selectionAbortController?.abort();
     this.selectionAbortController = undefined;
-    this.form?.clearOwned();
+    const form = this.form;
+    await form?.clearOwned();
+    if (this.form !== form) return;
     const context = detectGitLabProjectContext(location.href, document);
     if (!context) {
       return;
@@ -174,11 +185,14 @@ class ContentController {
    * <summary>Removes UI and owned rows when the current page is no longer a Run pipeline form.</summary>
    */
   private reset(): void {
+    if (!this.currentKey && !this.form && !this.variablesSection && !this.abortController) return;
     this.abortController?.abort();
     this.selectionAbortController?.abort();
     this.selectionAbortController = undefined;
     this.abortController = undefined;
-    this.form?.clearOwned();
+    const previousForm = this.form;
+    ++this.refreshEpoch;
+    this.pendingClear = this.pendingClear.then(() => previousForm?.clearOwned());
     this.form = undefined;
     this.currentKey = undefined;
     this.variablesSection = undefined;
@@ -194,7 +208,7 @@ class ContentController {
       return;
     }
     this.refreshQueued = true;
-    queueMicrotask(() => this.refresh());
+    queueMicrotask(() => void this.refresh());
   };
 
   /**
@@ -205,6 +219,24 @@ class ContentController {
     if (target instanceof HTMLInputElement && (target.name === "ref" || target.name === "ref_name" || target.closest("[data-testid='ref-selector']"))) {
       this.scheduleRefresh();
     }
+  };
+
+  /** <summary>Clears owned rows before GitLab replaces the form after a dropdown ref choice.</summary> */
+  private handleRefChoice = (event: MouseEvent): void => {
+    if (this.replayingRefChoice) return;
+    const target = event.target;
+    const choice = target instanceof Element
+      ? target.closest<HTMLButtonElement>("[data-testid='ref-select'] button[role='menuitem']")
+      : null;
+    const form = this.form;
+    if (!choice || !form?.hasOwnedRows()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void form.clearOwned().then(() => {
+      if (!choice.isConnected) return;
+      this.replayingRefChoice = true;
+      try { choice.click(); } finally { this.replayingRefChoice = false; }
+    });
   };
 
   /**

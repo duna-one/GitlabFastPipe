@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- A supported Node.js LTS release and npm.
+- Node.js 24 and npm.
 - Google Chrome or another Chromium browser for manual extension testing.
 - Access to a test GitLab project when testing authenticated preset loading.
 

@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
 const contentScript = fileURLToPath(new URL('../../dist/content.js', import.meta.url));
+const contentCss = fileURLToPath(new URL('../../dist/content.css', import.meta.url));
 
 const fixture = `<!doctype html><html><body>
   <form id="pipeline-form">
@@ -23,6 +24,38 @@ const fixture = `<!doctype html><html><body>
       row.querySelector('button').addEventListener('click', () => row.remove());
       document.querySelector('[data-testid="ci-variable-list"]').append(row);
     });
+  </script>
+</body></html>`;
+
+const autoRowFixture = `<!doctype html><html><body>
+  <form id="pipeline-form">
+    <div data-testid="ref-select"><button type="button"><span class="gl-new-dropdown-button-text">master</span></button><button type="button" role="menuitem">feature</button></div>
+    <fieldset><legend>Variables</legend><div id="variable-list"></div></fieldset>
+    <button type="submit">Run pipeline</button>
+  </form>
+  <script>
+    window.pipelineSubmissions = 0;
+    document.querySelector('form').addEventListener('submit', event => { event.preventDefault(); window.pipelineSubmissions++; });
+    document.querySelector('[role="menuitem"]').addEventListener('click', () => { document.querySelector('.gl-new-dropdown-button-text').textContent = 'feature'; });
+    /** <summary>Creates a GitLab-style blank row that grows after it is filled.</summary> */
+    function addRow() {
+      const row = document.createElement('div');
+      row.dataset.testid = 'ci-variable-row';
+      row.innerHTML = '<input data-testid="pipeline-form-ci-variable-key" placeholder="Input variable key"><textarea data-testid="pipeline-form-ci-variable-value" placeholder="Input variable value"></textarea><button type="button" data-testid="remove-ci-variable-row" aria-label="Remove variable">Remove variable</button>';
+      const key = row.querySelector('input');
+      const value = row.querySelector('textarea');
+      const maybeGrow = () => {
+        if (key.value && value.value && !row.dataset.grown) {
+          row.dataset.grown = 'true';
+          queueMicrotask(addRow);
+        }
+      };
+      key.addEventListener('input', maybeGrow);
+      value.addEventListener('input', maybeGrow);
+      row.querySelector('button').addEventListener('click', () => { row.remove(); if (!document.querySelector('[data-testid="ci-variable-row"]')) addRow(); });
+      document.querySelector('#variable-list').append(row);
+    }
+    addRow();
   </script>
 </body></html>`;
 
@@ -143,4 +176,58 @@ test('shows an incompatible schema separately from an invalid file', async ({ pa
   await page.addScriptTag({ path: contentScript });
   await expect(page.locator('.gfp-status')).toContainText('schema version this extension does not support');
   await expect(page.getByRole('button', { name: 'Run pipeline' })).toBeEnabled();
+});
+
+test('fills auto-growing GitLab rows using a dropdown-selected ref', async ({ page }) => {
+  await page.route('https://gitlab.example/**', async (route) => {
+    const url = new URL(route.request().url());
+    await route.fulfill(url.pathname.includes('/-/raw/')
+      ? { status: 200, contentType: 'application/json', body: mainPresets }
+      : { status: 200, contentType: 'text/html', body: autoRowFixture });
+  });
+  await page.goto('https://gitlab.example/team/project/-/pipelines/new');
+  await page.addScriptTag({ path: contentScript });
+  await expect(page.getByRole('button', { name: /Server/ })).toBeVisible();
+  await page.getByRole('button', { name: /Server/ }).click();
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"]')).toHaveCount(2);
+  await expect(page.getByTestId('ci-variable-row')).toHaveCount(3);
+  await expect(page.getByTestId('ci-variable-row').first().getByTestId('pipeline-form-ci-variable-key')).toHaveValue('SERVER');
+  await expect(page.getByTestId('ci-variable-row').nth(1).getByTestId('pipeline-form-ci-variable-value')).toHaveValue('GL');
+  await page.getByRole('button', { name: 'Clear selection' }).click();
+  await expect(page.getByTestId('ci-variable-row')).toHaveCount(1);
+  expect(await page.evaluate(() => (window as typeof window & { pipelineSubmissions: number }).pipelineSubmissions)).toBe(0);
+});
+
+test('clears owned rows before a dropdown ref change while keeping manual values', async ({ page }) => {
+  await page.route('https://gitlab.example/**', async (route) => {
+    const url = new URL(route.request().url());
+    await route.fulfill(url.pathname.includes('/-/raw/')
+      ? { status: 200, contentType: 'application/json', body: mainPresets }
+      : { status: 200, contentType: 'text/html', body: autoRowFixture });
+  });
+  await page.goto('https://gitlab.example/team/project/-/pipelines/new');
+  await page.addScriptTag({ path: contentScript });
+  await expect(page.getByRole('button', { name: /Server/ })).toBeVisible();
+  await page.getByTestId('pipeline-form-ci-variable-key').fill('MANUAL');
+  await page.getByTestId('pipeline-form-ci-variable-value').fill('keep');
+  await page.getByRole('button', { name: /Server/ }).click();
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"]')).toHaveCount(2);
+  await page.getByRole('menuitem', { name: 'feature' }).click();
+  await expect(page.locator('#gfp-root .gfp-context')).toContainText('feature');
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"]')).toHaveCount(0);
+  await expect(page.getByTestId('ci-variable-row').first().getByTestId('pipeline-form-ci-variable-key')).toHaveValue('MANUAL');
+  await expect(page.getByTestId('ci-variable-row')).toHaveCount(2);
+});
+
+test('keeps keyboard focus and uses readable dark-theme colors', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await openFixture(page);
+  await page.addStyleTag({ path: contentCss });
+  const preset = page.getByRole('button', { name: 'Server' });
+  await preset.focus();
+  await preset.press('Enter');
+  await expect(preset).toBeFocused();
+  await expect(preset).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('region', { name: 'GitLab Fast Pipe' })).toBeVisible();
+  await expect(page.locator('#gfp-root')).toHaveCSS('background-color', 'rgb(31, 41, 55)');
 });

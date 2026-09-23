@@ -48,8 +48,9 @@ npm run package
 npm run check:zip
 ```
 
-See [development notes](docs/development.md) and the
-[preset format](docs/presets.md).
+See [development notes](docs/development.md), the
+[preset format](docs/presets.md), and the
+[GitLab compatibility checks](docs/compatibility.md).
 
 ## Releases
 

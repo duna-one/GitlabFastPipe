@@ -47,9 +47,13 @@ describe("GitLab preset loading", () => {
     })).rejects.toMatchObject({ category: "forbidden" });
   });
 
-  it("uses the URL project path and DOM ref without a fixed GitLab host", () => {
-    const document = { querySelector: vi.fn((selector: string) => selector === "input[name='ref']" ? { getAttribute: () => "release/1.0" } : null) } as unknown as Document;
-    expect(detectGitLabProjectContext("https://code.example.test/team/tools/project/-/pipelines/new", document))
+  it("uses the selected dropdown ref before an older URL ref without a fixed GitLab host", () => {
+    const document = {
+      querySelector: vi.fn((selector: string) => selector === "[data-testid='ref-select'] button .gl-new-dropdown-button-text"
+        ? { textContent: " release/1.0 " }
+        : null),
+    } as unknown as Document;
+    expect(detectGitLabProjectContext("https://code.example.test/team/tools/project/-/pipelines/new?ref=stale", document))
       .toEqual({ origin: "https://code.example.test", projectPath: "team/tools/project", ref: "release/1.0" });
   });
 });
