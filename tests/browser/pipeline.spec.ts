@@ -85,7 +85,7 @@ async function openFixture(page: Page, rawByRef: Record<string, string> = { main
   await expect(page.getByRole('button', { name: /Server/ })).toBeVisible();
 }
 
-test('applies native variable rows and clears only extension-owned rows', async ({ page }) => {
+test('toggles presets, aggregates variables, and preserves manual rows', async ({ page }) => {
   await openFixture(page);
   await page.getByTestId('ci-variable-add-button').click();
   const manual = page.getByTestId('ci-variable-row').first();
@@ -95,13 +95,34 @@ test('applies native variable rows and clears only extension-owned rows', async 
   await expect(page.getByTestId('ci-variable-row')).toHaveCount(3);
   await expect(page.locator('[data-gitlab-fast-pipe-owned="true"]')).toHaveCount(2);
   await expect(page.locator('[data-gitlab-fast-pipe-owned="true"] input[name*="key"]').first()).toHaveValue('SERVER');
-  await page.getByRole('button', { name: 'Clear selection' }).click();
+  await page.getByRole('button', { name: /Android/ }).click();
+  await expect(page.getByTestId('ci-variable-row')).toHaveCount(4);
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"]')).toHaveCount(3);
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"] input[name*="key"]').nth(2)).toHaveValue('ANDROID');
+  await page.getByRole('button', { name: /Server/ }).click();
+  await expect(page.getByTestId('ci-variable-row')).toHaveCount(2);
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"]')).toHaveCount(1);
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"] input[name*="key"]')).toHaveValue('ANDROID');
+  await page.getByRole('button', { name: /Android/ }).click();
   await expect(page.getByTestId('ci-variable-row')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Clear selection' })).toHaveCount(0);
   await expect(manual.getByLabel('Variable value')).toHaveValue('keep');
   expect(await page.evaluate(() => (window as typeof window & { pipelineSubmissions: number }).pipelineSubmissions)).toBe(0);
 });
 
-test('shows preset descriptions and variables only for the selected preset', async ({ page }) => {
+test('keeps selection and native rows in sync after rapid tile clicks', async ({ page }) => {
+  await openFixture(page);
+  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await page.getByRole('button', { name: 'Android', exact: true }).click();
+  await page.getByRole('button', { name: 'Server', exact: true }).click();
+
+  await expect(page.getByRole('button', { name: 'Server', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByRole('button', { name: 'Android', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"]')).toHaveCount(1);
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"] input[name*="key"]')).toHaveValue('ANDROID');
+});
+
+test('shows details for every selected preset and supports multiple selection', async ({ page }) => {
   await openFixture(page);
   await page.addStyleTag({ path: contentCss });
   const panel = page.locator('#gfp-root');
@@ -131,6 +152,12 @@ test('shows preset descriptions and variables only for the selected preset', asy
   await expect(details).toContainText('Build server');
   await expect(details).toContainText('SERVER=1');
   await expect(details).toContainText('REGION=GL');
+  await grid.getByRole('button', { name: 'Android', exact: true }).click();
+  await expect(grid.getByRole('button', { name: 'Server', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(grid.getByRole('button', { name: 'Android', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(details).toContainText('Build server');
+  await expect(details).toContainText('Build Android');
+  await expect(details).toContainText('ANDROID=1');
   for (const [title, description, variable] of [
     ['Server', 'Build server', 'SERVER=1'],
     ['Android', 'Build Android', 'ANDROID=1']
@@ -145,7 +172,10 @@ test('shows preset descriptions and variables only for the selected preset', asy
   expect(narrowColumns).toBe(1);
   await expect(grid).toHaveCSS('display', 'grid');
 
-  await page.getByRole('button', { name: 'Clear selection' }).click();
+  await grid.getByRole('button', { name: 'Server', exact: true }).click();
+  await expect(details).toContainText('Build Android');
+  await expect(details).not.toContainText('Build server');
+  await grid.getByRole('button', { name: 'Android', exact: true }).click();
   await expect(details).toHaveCount(0);
 });
 
@@ -172,13 +202,37 @@ test('wraps long preset names inside grid buttons', async ({ page }) => {
   expect(await button.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
-test('reports manual-key conflicts without creating a partial preset', async ({ page }) => {
+test('reports manual-key conflicts atomically without partially applying another selection', async ({ page }) => {
   await openFixture(page);
   await page.getByTestId('ci-variable-add-button').click();
   await page.getByTestId('ci-variable-row').getByLabel('Variable key').fill('SERVER');
+  await page.getByRole('button', { name: /Android/ }).click();
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"]')).toHaveCount(1);
   await page.getByRole('button', { name: /Server/ }).click();
   await expect(page.locator('.gfp-conflict')).toContainText('SERVER');
-  await expect(page.getByTestId('ci-variable-row')).toHaveCount(1);
+  await expect(page.getByTestId('ci-variable-row')).toHaveCount(2);
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"] input[name*="key"]')).toHaveValue('ANDROID');
+  await expect(page.getByRole('button', { name: /Android/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: /Server/ })).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('deduplicates matching variables and rejects conflicting preset values atomically', async ({ page }) => {
+  const presets = JSON.stringify({ schemaVersion: 1, presets: [
+    { id: 'server', title: 'Server', description: 'Build server', variables: [{ key: 'SHARED', value: 'same' }] },
+    { id: 'android', title: 'Android', description: 'Build Android', variables: [{ key: 'SHARED', value: 'same' }] },
+    { id: 'release', title: 'Release', description: 'Release build', variables: [{ key: 'SHARED', value: 'different' }] }
+  ] });
+  await openFixture(page, { main: presets });
+  await page.getByRole('button', { name: 'Server', exact: true }).click();
+  await page.getByRole('button', { name: 'Android', exact: true }).click();
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"]')).toHaveCount(1);
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"] input[name*="key"]')).toHaveValue('SHARED');
+  await page.getByRole('button', { name: 'Release', exact: true }).click();
+  await expect(page.locator('.gfp-conflict')).toContainText('SHARED');
+  await expect(page.getByRole('button', { name: 'Server', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Android', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Release', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('[data-gitlab-fast-pipe-owned="true"]')).toHaveCount(1);
 });
 
 test('changes ref, ignores old selection, and avoids a duplicate panel on reinjection', async ({ page }) => {
@@ -265,7 +319,7 @@ test('fills auto-growing GitLab rows using a dropdown-selected ref', async ({ pa
   await expect(page.getByTestId('ci-variable-row')).toHaveCount(3);
   await expect(page.getByTestId('ci-variable-row').first().getByTestId('pipeline-form-ci-variable-key')).toHaveValue('SERVER');
   await expect(page.getByTestId('ci-variable-row').nth(1).getByTestId('pipeline-form-ci-variable-value')).toHaveValue('GL');
-  await page.getByRole('button', { name: 'Clear selection' }).click();
+  await page.getByRole('button', { name: /Server/ }).click();
   await expect(page.getByTestId('ci-variable-row')).toHaveCount(1);
   expect(await page.evaluate(() => (window as typeof window & { pipelineSubmissions: number }).pipelineSubmissions)).toBe(0);
 });

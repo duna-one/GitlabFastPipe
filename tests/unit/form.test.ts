@@ -3,6 +3,8 @@ import { VariableForm, type VariablePreset } from "../../src/content/form";
 
 const serverPreset: VariablePreset = { id: "server", variables: [{ key: "SERVER", value: "1" }] };
 const androidPreset: VariablePreset = { id: "server-android", variables: [{ key: "SERVER", value: "1" }, { key: "ANDROID", value: "1" }] };
+const clientPreset: VariablePreset = { id: "client", variables: [{ key: "CLIENT", value: "1" }] };
+const incompatibleServerPreset: VariablePreset = { id: "other-server", variables: [{ key: "SERVER", value: "2" }] };
 
 /** <summary>Appends one native GitLab-compatible row and its remove control.</summary> */
 function appendNativeRow(container: HTMLElement, key = "", value = ""): HTMLElement {
@@ -88,7 +90,7 @@ describe("VariableForm", () => {
     const container = variablesFixture(["MANUAL"]);
     const form = new VariableForm(container);
 
-    await expect(form.applyPreset(serverPreset)).resolves.toEqual({ applied: true, conflictKeys: [], unsupported: false });
+    await expect(form.applyPreset(serverPreset)).resolves.toEqual({ applied: true, conflictKeys: [], presetConflictKeys: [], unsupported: false });
     expect(ownedKeys(container)).toEqual(["SERVER"]);
     expect(container.querySelectorAll("[data-testid='ci-variable-row']")).toHaveLength(2);
     expect(container.querySelector<HTMLInputElement>("[data-gitlab-fast-pipe-owned='true'] input[name*='value']")?.value).toBe("1");
@@ -98,7 +100,7 @@ describe("VariableForm", () => {
     const container = autoAddVariablesFixture(["MANUAL"]);
     const form = new VariableForm(container);
 
-    await expect(form.applyPreset(androidPreset)).resolves.toEqual({ applied: true, conflictKeys: [], unsupported: false });
+    await expect(form.applyPreset(androidPreset)).resolves.toEqual({ applied: true, conflictKeys: [], presetConflictKeys: [], unsupported: false });
     expect(ownedKeys(container)).toEqual(["SERVER", "ANDROID"]);
     expect(container.querySelectorAll("[data-testid='ci-variable-row']")).toHaveLength(4);
     expect(container.querySelector<HTMLTextAreaElement>("[data-gitlab-fast-pipe-owned='true'] textarea")?.value).toBe("1");
@@ -140,7 +142,7 @@ describe("VariableForm", () => {
     placeholder.dataset.expanded = "true";
     const form = new VariableForm(container);
 
-    await expect(form.applyPreset(serverPreset)).resolves.toEqual({ applied: false, conflictKeys: [], unsupported: true });
+    await expect(form.applyPreset(serverPreset)).resolves.toEqual({ applied: false, conflictKeys: [], presetConflictKeys: [], unsupported: true });
     expect(container.querySelectorAll("[data-testid='ci-variable-row']")).toHaveLength(0);
   });
 
@@ -149,7 +151,7 @@ describe("VariableForm", () => {
     const form = new VariableForm(container);
     await form.applyPreset(serverPreset);
 
-    await expect(form.applyPreset(androidPreset)).resolves.toEqual({ applied: false, conflictKeys: ["ANDROID"], unsupported: false });
+    await expect(form.applyPreset(androidPreset)).resolves.toEqual({ applied: false, conflictKeys: ["ANDROID"], presetConflictKeys: [], unsupported: false });
     expect(ownedKeys(container)).toEqual(["SERVER"]);
   });
 
@@ -158,9 +160,53 @@ describe("VariableForm", () => {
     const form = new VariableForm(container);
     await form.applyPreset(serverPreset);
 
-    await expect(form.applyPreset(androidPreset)).resolves.toEqual({ applied: true, conflictKeys: [], unsupported: false });
+    await expect(form.applyPreset(androidPreset)).resolves.toEqual({ applied: true, conflictKeys: [], presetConflictKeys: [], unsupported: false });
     expect(ownedKeys(container)).toEqual(["SERVER", "ANDROID"]);
     expect(container.querySelectorAll("[data-testid='ci-variable-row']")).toHaveLength(3);
+  });
+
+  it("combines selected presets in order and writes a shared matching key once", async () => {
+    const container = variablesFixture(["MANUAL"]);
+    const form = new VariableForm(container);
+
+    await expect(form.applyPresets([serverPreset, androidPreset, clientPreset])).resolves
+      .toEqual({ applied: true, conflictKeys: [], presetConflictKeys: [], unsupported: false });
+
+    expect(ownedKeys(container)).toEqual(["SERVER", "ANDROID", "CLIENT"]);
+  });
+
+  it("combines selected presets through auto-growing placeholder rows", async () => {
+    const container = autoAddVariablesFixture(["MANUAL"]);
+    const form = new VariableForm(container);
+
+    await expect(form.applyPresets([serverPreset, androidPreset, clientPreset])).resolves
+      .toEqual({ applied: true, conflictKeys: [], presetConflictKeys: [], unsupported: false });
+
+    expect(ownedKeys(container)).toEqual(["SERVER", "ANDROID", "CLIENT"]);
+    expect(container.querySelectorAll("[data-testid='ci-variable-row']")).toHaveLength(5);
+  });
+
+  it("preserves prior extension rows when selected presets assign different values to one key", async () => {
+    const container = variablesFixture(["MANUAL"]);
+    const form = new VariableForm(container);
+    await form.applyPresets([serverPreset, clientPreset]);
+
+    await expect(form.applyPresets([serverPreset, incompatibleServerPreset])).resolves
+      .toEqual({ applied: false, conflictKeys: [], presetConflictKeys: ["SERVER"], unsupported: false });
+
+    expect(ownedKeys(container)).toEqual(["SERVER", "CLIENT"]);
+  });
+
+  it("clears only extension rows when the selected preset set becomes empty", async () => {
+    const container = variablesFixture(["MANUAL"]);
+    const form = new VariableForm(container);
+    await form.applyPresets([serverPreset, clientPreset]);
+
+    await expect(form.applyPresets([])).resolves
+      .toEqual({ applied: true, conflictKeys: [], presetConflictKeys: [], unsupported: false });
+
+    expect(ownedKeys(container)).toEqual([]);
+    expect(container.querySelectorAll("[data-testid='ci-variable-row']")).toHaveLength(1);
   });
 
   it("does not insert a synthetic row if GitLab's native add control is unavailable", async () => {
@@ -168,7 +214,7 @@ describe("VariableForm", () => {
     container.querySelector("[data-testid='ci-variable-add-button']")?.remove();
     const form = new VariableForm(container);
 
-    await expect(form.applyPreset(serverPreset)).resolves.toEqual({ applied: false, conflictKeys: [], unsupported: true });
+    await expect(form.applyPreset(serverPreset)).resolves.toEqual({ applied: false, conflictKeys: [], presetConflictKeys: [], unsupported: true });
     expect(container.querySelectorAll("[data-testid='ci-variable-row']")).toHaveLength(0);
   });
 
@@ -194,7 +240,7 @@ describe("VariableForm", () => {
     });
     const form = new VariableForm(container);
 
-    await expect(form.applyPreset(androidPreset)).resolves.toEqual({ applied: false, conflictKeys: [], unsupported: true });
+    await expect(form.applyPreset(androidPreset)).resolves.toEqual({ applied: false, conflictKeys: [], presetConflictKeys: [], unsupported: true });
     expect(container.querySelectorAll("[data-testid='ci-variable-row']")).toHaveLength(0);
   });
 });

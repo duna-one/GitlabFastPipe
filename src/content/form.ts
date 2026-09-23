@@ -4,8 +4,13 @@ export interface PresetVariable { key: string; value: string; }
 /** The part of a preset that is needed to populate GitLab variables. */
 export interface VariablePreset { id: string; variables: readonly PresetVariable[]; }
 
-/** The result of an attempt to apply a preset. */
-export interface ApplyResult { applied: boolean; conflictKeys: readonly string[]; unsupported: boolean; }
+/** The result of an attempt to apply a preset selection. */
+export interface ApplyResult {
+  applied: boolean;
+  conflictKeys: readonly string[];
+  presetConflictKeys: readonly string[];
+  unsupported: boolean;
+}
 
 /** The maximum time given to a GitLab DOM update after clicking Add variable. */
 const NATIVE_ROW_TIMEOUT_MS = 500;
@@ -19,28 +24,40 @@ export class VariableForm {
   /** <summary>Creates a variable form controller for one GitLab Variables container.</summary> */
   public constructor(private readonly container: HTMLElement) { this.restoreOwnedRows(); }
 
-  /** <summary>Applies a preset through native GitLab rows after checking all manual keys.</summary> */
+  /** <summary>Applies one preset through native GitLab rows after checking all manual keys.</summary> */
   public async applyPreset(preset: VariablePreset, signal?: AbortSignal): Promise<ApplyResult> {
-    const conflictKeys = this.findConflictKeys(preset.variables);
-    if (conflictKeys.length > 0) return { applied: false, conflictKeys, unsupported: false };
-    const pendingRows = await this.createAndFillNativeRows(preset.variables, signal);
+    return this.applyPresets([preset], signal);
+  }
+
+  /** <summary>Atomically applies a deduplicated selection of presets or keeps the current rows on conflict.</summary> */
+  public async applyPresets(presets: readonly VariablePreset[], signal?: AbortSignal): Promise<ApplyResult> {
+    const aggregate = this.aggregateVariables(presets);
+    const conflictKeys = this.findConflictKeys(aggregate.variables);
+    if (conflictKeys.length > 0 || aggregate.presetConflictKeys.length > 0) {
+      return { applied: false, conflictKeys, presetConflictKeys: aggregate.presetConflictKeys, unsupported: false };
+    }
+    if (aggregate.variables.length === 0) {
+      await this.clearOwned();
+      return { applied: true, conflictKeys: [], presetConflictKeys: [], unsupported: false };
+    }
+    const pendingRows = await this.createAndFillNativeRows(aggregate.variables, signal);
     if (!pendingRows) {
-      return { applied: false, conflictKeys: [], unsupported: true };
+      return { applied: false, conflictKeys: [], presetConflictKeys: [], unsupported: true };
     }
     if (signal?.aborted) {
       await this.removeRows(pendingRows);
-      return { applied: false, conflictKeys: [], unsupported: true };
+      return { applied: false, conflictKeys: [], presetConflictKeys: [], unsupported: true };
     }
     await this.clearOwned();
     if (signal?.aborted) {
       await this.removeRows(pendingRows);
-      return { applied: false, conflictKeys: [], unsupported: true };
+      return { applied: false, conflictKeys: [], presetConflictKeys: [], unsupported: true };
     }
     for (const row of pendingRows) {
       row.dataset.gitlabFastPipeOwned = "true";
       this.ownedRows.add(row);
     }
-    return { applied: true, conflictKeys: [], unsupported: false };
+    return { applied: true, conflictKeys: [], presetConflictKeys: [], unsupported: false };
   }
 
   /** <summary>Removes only rows previously added through GitLab controls.</summary> */
@@ -62,6 +79,25 @@ export class VariableForm {
       }
     }
     return variables.map((variable) => variable.key).filter((key) => manualKeys.has(key));
+  }
+
+  /** <summary>Combines preset variables in caller order and reports keys assigned different values.</summary> */
+  private aggregateVariables(presets: readonly VariablePreset[]): { variables: readonly PresetVariable[]; presetConflictKeys: readonly string[] } {
+    const valuesByKey = new Map<string, string>();
+    const variables: PresetVariable[] = [];
+    const presetConflictKeys: string[] = [];
+    for (const preset of presets) {
+      for (const variable of preset.variables) {
+        const currentValue = valuesByKey.get(variable.key);
+        if (currentValue === undefined) {
+          valuesByKey.set(variable.key, variable.value);
+          variables.push(variable);
+        } else if (currentValue !== variable.value && !presetConflictKeys.includes(variable.key)) {
+          presetConflictKeys.push(variable.key);
+        }
+      }
+    }
+    return { variables, presetConflictKeys };
   }
 
   /** <summary>Creates and fills rows through the supported native GitLab form pattern.</summary> */

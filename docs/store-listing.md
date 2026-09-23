@@ -16,8 +16,9 @@ Add reusable variable presets to GitLab's Run pipeline page.
 ## Detailed description
 
 Gitlab Fast Pipe adds a preset panel to GitLab's standard Run pipeline page.
-Choose a branch or tag, select a preset, and review the variables in GitLab's
-existing form before starting the pipeline with GitLab's normal button.
+Choose a branch or tag, select one or more presets, and review the variables
+in GitLab's existing form before starting the pipeline with GitLab's normal
+button.
 
 Presets are stored as JSON in the same GitLab repository and are read from the
 currently selected ref. This lets teams keep their pipeline choices alongside
@@ -35,7 +36,7 @@ approved.
 ### Single purpose
 
 The extension displays repository-defined pipeline variable presets on GitLab's
-Run pipeline page and copies a selected preset into GitLab's standard Variables
+Run pipeline page and copies selected presets into GitLab's standard Variables
 fields for the user to review.
 
 ### Data handling

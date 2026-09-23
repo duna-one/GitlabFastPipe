@@ -41,8 +41,9 @@ layout changes.
 4. Grant access only to an HTTPS test GitLab origin.
 5. Open that project's **Run pipeline** page and select a ref containing
    `.gitlab-fast-pipe/presets.json`.
-6. Verify preset loading, field insertion, conflicts with manually-added
-   variables, clear selection, a ref switch, and each error state.
+6. Verify preset loading, selecting multiple tiles, deselecting a tile,
+   conflicts with manually-added variables and between presets, a ref switch,
+   and each error state.
 
 Use only test values in manual checks. The extension deliberately relies on the
 browser's current GitLab session and must not ask for, persist, or log a token

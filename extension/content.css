@@ -70,6 +70,18 @@
   overflow-wrap: anywhere;
 }
 #gfp-root .gfp-selected-details:empty { display: none; }
+#gfp-root .gfp-selected-preset + .gfp-selected-preset {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--gfp-border);
+}
+#gfp-root .gfp-selected-preset h3 {
+  margin: 0 0 4px;
+  color: var(--gfp-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
 #gfp-root .gfp-selected-details .gfp-variable {
   margin-top: 6px;
   color: var(--gfp-muted);
@@ -87,8 +99,6 @@
 
 #gfp-root .gfp-status, #gfp-root .gfp-error { padding: 10px 12px; border: 1px solid var(--gfp-border); border-radius: 6px; background: var(--gfp-surface-subtle); }
 #gfp-root .gfp-conflict, #gfp-root .gfp-error { border-color: color-mix(in srgb, var(--gfp-danger) 35%, var(--gfp-border)); color: var(--gfp-danger); background: var(--gfp-danger-surface); }
-#gfp-root .gfp-clear { justify-self: start; margin-top: 4px; }
-
 @media (max-width: 575px) {
   #gfp-root { padding: 16px; }
   #gfp-root .gfp-presets { grid-template-columns: minmax(0, 1fr); }

@@ -1,9 +1,10 @@
 # Gitlab Fast Pipe
 
 Gitlab Fast Pipe is a Manifest V3 Chrome extension that adds reusable variable
-presets to GitLab's **Run pipeline** page. A preset is read from the selected
-Git ref and fills GitLab's existing Variables fields. The user reviews the
-values and starts the pipeline with GitLab's normal button.
+presets to GitLab's **Run pipeline** page. Presets are read from the selected
+Git ref. Select one or more tiles to fill GitLab's existing Variables fields;
+click a selected tile again to remove it. The user reviews the values and
+starts the pipeline with GitLab's normal button.
 
 The extension does not store GitLab credentials, call GitLab's pipeline API,
 or send project data to another service.

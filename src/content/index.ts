@@ -11,11 +11,15 @@ class ContentController {
   private selectionAbortController: AbortController | undefined;
   private form: VariableForm | undefined;
   private currentKey: string | undefined;
+  private selectedPresetIds: readonly string[] = [];
+  private requestedPresetIds: readonly string[] = [];
   private variablesSection: HTMLElement | undefined;
   private observer: MutationObserver | undefined;
   private refreshQueued = false;
   private refreshEpoch = 0;
   private pendingClear: Promise<void> = Promise.resolve();
+  private selectionQueue: Promise<void> = Promise.resolve();
+  private selectionEpoch = 0;
   private replayingRefChoice = false;
 
   /**
@@ -57,10 +61,13 @@ class ContentController {
 
     this.abortController?.abort();
     this.selectionAbortController?.abort();
+    ++this.selectionEpoch;
     const previousForm = this.form;
     const epoch = ++this.refreshEpoch;
     this.form = undefined;
     this.currentKey = key;
+    this.selectedPresetIds = [];
+    this.requestedPresetIds = [];
     this.variablesSection = variablesSection;
     this.pendingClear = this.pendingClear.then(() => previousForm?.clearOwned());
     await this.pendingClear;
@@ -98,58 +105,65 @@ class ContentController {
     }
   }
 
-  /**
-   * <summary>Applies a chosen preset or keeps the prior owned rows when a manual conflict exists.</summary>
-   */
-  private selectPreset = async (preset: PipelinePreset): Promise<void> => {
-    this.selectionAbortController?.abort();
+  /** <summary>Queues every preset toggle so rapid clicks leave rows and selected state synchronized.</summary> */
+  private togglePreset = (preset: PipelinePreset): void => {
+    const wasRequested = this.requestedPresetIds.includes(preset.id);
+    const requestedPresetIds = wasRequested
+      ? this.requestedPresetIds.filter((id) => id !== preset.id)
+      : [...this.requestedPresetIds, preset.id];
+    this.requestedPresetIds = requestedPresetIds;
+    const epoch = this.selectionEpoch;
+    this.selectionQueue = this.selectionQueue.then(() => this.applyRequestedSelection(requestedPresetIds, epoch));
+  };
+
+  /** <summary>Applies one queued selection unless its form was replaced by navigation.</summary> */
+  private async applyRequestedSelection(requestedPresetIds: readonly string[], epoch: number): Promise<void> {
+    if (epoch !== this.selectionEpoch) {
+      return;
+    }
     const abortController = new AbortController();
     this.selectionAbortController = abortController;
     const form = this.form;
-    const result = form ? await form.applyPreset(preset, abortController.signal) : undefined;
-    if (!result || !this.currentKey || this.form !== form || this.selectionAbortController !== abortController) {
+    let result: Awaited<ReturnType<VariableForm["applyPresets"]>> | undefined;
+    try {
+      result = form ? await form.applyPresets(this.selectedPresets(requestedPresetIds), abortController.signal) : undefined;
+    } catch {
+      result = { applied: false, conflictKeys: [], presetConflictKeys: [], unsupported: true };
+    }
+    if (!result || !this.currentKey || this.form !== form || this.selectionAbortController !== abortController || epoch !== this.selectionEpoch) {
       return;
     }
     const context = detectGitLabProjectContext(location.href, document);
     if (!context) {
       return;
+    }
+    if (result.applied) {
+      this.selectedPresetIds = requestedPresetIds;
+      this.requestedPresetIds = requestedPresetIds;
+    } else {
+      this.requestedPresetIds = this.selectedPresetIds;
     }
     this.render({
       kind: "loaded",
       projectPath: context.projectPath,
       ref: context.ref,
       presets: this.loadedPresets(),
-      selectedPresetId: result.applied ? preset.id : this.lastState?.kind === "loaded" ? this.lastState.selectedPresetId : undefined,
+      selectedPresetIds: this.selectedPresetIds,
       conflictKeys: result.conflictKeys,
+      presetConflictKeys: result.presetConflictKeys,
       unsupported: result.unsupported,
     });
-  };
+  }
 
   /**
-   * <summary>Clears extension-owned variables after an explicit user action.</summary>
-   */
-  private clearSelection = async (): Promise<void> => {
-    this.selectionAbortController?.abort();
-    this.selectionAbortController = undefined;
-    const form = this.form;
-    await form?.clearOwned();
-    if (this.form !== form) return;
-    const context = detectGitLabProjectContext(location.href, document);
-    if (!context) {
-      return;
-    }
-    this.render({ kind: "loaded", projectPath: context.projectPath, ref: context.ref, presets: this.loadedPresets() });
-  };
-
-  /**
-   * <summary>Renders one state and connects only selection and clear actions.</summary>
+   * <summary>Renders one state and connects the preset toggle action.</summary>
    */
   private render(state: PanelState): void {
     const variablesSection = this.variablesSection;
     if (!variablesSection) {
       return;
     }
-    renderPanel(ensurePanel(variablesSection), state, { onSelect: this.selectPreset, onClear: this.clearSelection });
+    renderPanel(ensurePanel(variablesSection), state, { onToggle: this.togglePreset });
     this.lastState = state;
   }
 
@@ -160,6 +174,12 @@ class ContentController {
    */
   private loadedPresets(): readonly PipelinePreset[] {
     return this.lastState?.kind === "loaded" ? this.lastState.presets : [];
+  }
+
+  /** <summary>Returns requested presets in document order for deterministic variable aggregation.</summary> */
+  private selectedPresets(selectedPresetIds: readonly string[]): readonly PipelinePreset[] {
+    const ids = new Set(selectedPresetIds);
+    return this.loadedPresets().filter((preset) => ids.has(preset.id));
   }
 
   /**
@@ -188,6 +208,7 @@ class ContentController {
     if (!this.currentKey && !this.form && !this.variablesSection && !this.abortController) return;
     this.abortController?.abort();
     this.selectionAbortController?.abort();
+    ++this.selectionEpoch;
     this.selectionAbortController = undefined;
     this.abortController = undefined;
     const previousForm = this.form;
@@ -195,6 +216,8 @@ class ContentController {
     this.pendingClear = this.pendingClear.then(() => previousForm?.clearOwned());
     this.form = undefined;
     this.currentKey = undefined;
+    this.selectedPresetIds = [];
+    this.requestedPresetIds = [];
     this.variablesSection = undefined;
     this.lastState = undefined;
     removePanel();

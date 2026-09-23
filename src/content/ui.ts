@@ -3,7 +3,7 @@ import type { PipelinePreset } from "../core/presets";
 /** The UI state shown while presets are being obtained for a ref. */
 export type PanelState =
   | { kind: "loading"; projectPath: string; ref: string }
-  | { kind: "loaded"; projectPath: string; ref: string; presets: readonly PipelinePreset[]; selectedPresetId?: string; conflictKeys?: readonly string[]; unsupported?: boolean }
+  | { kind: "loaded"; projectPath: string; ref: string; presets: readonly PipelinePreset[]; selectedPresetIds?: readonly string[]; conflictKeys?: readonly string[]; presetConflictKeys?: readonly string[]; unsupported?: boolean }
   | { kind: "missing"; projectPath: string; ref: string }
   | { kind: "forbidden"; projectPath: string; ref: string }
   | { kind: "format"; projectPath: string; ref: string }
@@ -12,10 +12,8 @@ export type PanelState =
 
 /** Callbacks for user actions within the extension panel. */
 export interface PanelActions {
-  /** <summary>Handles a user selecting one preset.</summary> */
-  onSelect(preset: PipelinePreset): void;
-  /** <summary>Handles a user clearing extension-owned variables.</summary> */
-  onClear(): void;
+  /** <summary>Toggles one preset while preserving the other selected presets.</summary> */
+  onToggle(preset: PipelinePreset): void;
 }
 
 /** The durable id used to make injection idempotent. */
@@ -67,7 +65,6 @@ export function renderPanel(panel: HTMLElement, state: PanelState, actions: Pane
   const focusedElement = document.activeElement;
   const focusWasInsidePanel = focusedElement instanceof HTMLElement && panel.contains(focusedElement);
   const focusedPresetId = focusWasInsidePanel ? focusedElement?.getAttribute("data-gitlab-fast-pipe-preset-id") : null;
-  const focusWasOnClear = focusWasInsidePanel && (focusedElement as HTMLElement).classList.contains("gfp-clear");
 
   panel.replaceChildren();
   panel.append(createHeading());
@@ -82,7 +79,7 @@ export function renderPanel(panel: HTMLElement, state: PanelState, actions: Pane
     const focusedControl = focusedPresetId
       ? Array.from(panel.querySelectorAll<HTMLElement>("[data-gitlab-fast-pipe-preset-id]"))
         .find((candidate) => candidate.getAttribute("data-gitlab-fast-pipe-preset-id") === focusedPresetId)
-      : focusWasOnClear ? panel.querySelector<HTMLElement>(".gfp-clear:not(:disabled)") : null;
+      : null;
     (focusedControl ?? panel.querySelector<HTMLElement>(`#${PANEL_TITLE_ID}`))?.focus();
   }
 }
@@ -125,7 +122,7 @@ function createHeading(): HTMLElement {
 }
 
 /**
- * <summary>Builds preset buttons, conflict feedback, and the clear-selection action.</summary>
+ * <summary>Builds preset buttons, selection details, and conflict feedback.</summary>
  */
 function createLoadedContent(state: Extract<PanelState, { kind: "loaded" }>, actions: PanelActions): HTMLElement {
   const content = document.createElement("div");
@@ -138,6 +135,13 @@ function createLoadedContent(state: Extract<PanelState, { kind: "loaded" }>, act
     conflict.textContent = `Variables already entered manually: ${state.conflictKeys.join(", ")}. Remove or rename them before choosing this preset.`;
     content.append(conflict);
   }
+  if (state.presetConflictKeys && state.presetConflictKeys.length > 0) {
+    const conflict = document.createElement("p");
+    conflict.className = "gfp-conflict gfp-error gl-text-danger";
+    conflict.setAttribute("role", "alert");
+    conflict.textContent = `The selected presets use different values for: ${state.presetConflictKeys.join(", ")}.`;
+    content.append(conflict);
+  }
   if (state.unsupported) {
     const unsupported = document.createElement("p");
     unsupported.className = "gfp-error";
@@ -148,31 +152,22 @@ function createLoadedContent(state: Extract<PanelState, { kind: "loaded" }>, act
 
   const presets = document.createElement("div");
   presets.className = "gfp-presets";
+  const selectedPresetIds = new Set(state.selectedPresetIds);
   for (const preset of state.presets) {
-    presets.append(createPresetButton(preset, preset.id === state.selectedPresetId, actions));
+    presets.append(createPresetButton(preset, selectedPresetIds.has(preset.id), actions));
   }
   content.append(presets);
 
-  const selectedPreset = state.selectedPresetId
-    ? state.presets.find((preset) => preset.id === state.selectedPresetId)
-    : undefined;
-  if (selectedPreset) {
-    content.append(createSelectedPresetDetails(selectedPreset));
+  const selectedPresets = state.presets.filter((preset) => selectedPresetIds.has(preset.id));
+  if (selectedPresets.length > 0) {
+    content.append(createSelectedPresetDetails(selectedPresets));
   }
 
-  const clear = document.createElement("button");
-  clear.type = "button";
-  clear.className = "gfp-clear btn btn-default";
-  clear.textContent = "Clear selection";
-  clear.disabled = !state.selectedPresetId;
-  clear.addEventListener("click", actions.onClear);
-  content.append(clear);
-
-  if (selectedPreset) {
+  if (selectedPresets.length > 0) {
     const status = document.createElement("p");
     status.className = "gfp-selection-status";
     status.setAttribute("role", "status");
-    status.textContent = `Preset selected: ${selectedPreset.title}.`;
+    status.textContent = `${selectedPresets.length} preset${selectedPresets.length === 1 ? "" : "s"} selected: ${selectedPresets.map((preset) => preset.title).join(", ")}.`;
     content.append(status);
   }
   return content;
@@ -192,25 +187,33 @@ function createPresetButton(preset: PipelinePreset, selected: boolean, actions: 
   const title = document.createElement("strong");
   title.textContent = preset.title;
   button.append(title);
-  button.addEventListener("click", () => actions.onSelect(preset));
+  button.addEventListener("click", () => actions.onToggle(preset));
   return button;
 }
 
 /**
- * <summary>Creates safe text details for the selected preset.</summary>
+ * <summary>Creates safe text details for every selected preset.</summary>
  */
-function createSelectedPresetDetails(preset: PipelinePreset): HTMLElement {
+function createSelectedPresetDetails(presets: readonly PipelinePreset[]): HTMLElement {
   const details = document.createElement("div");
   details.className = "gfp-selected-details";
 
-  const description = document.createElement("p");
-  description.className = "gfp-description";
-  description.textContent = preset.description;
-  const variables = document.createElement("p");
-  variables.className = "gfp-variable gl-text-subtle";
-  variables.textContent = preset.variables.map((variable) => `${variable.key}=${variable.value}`).join("; ");
+  for (const preset of presets) {
+    const presetDetails = document.createElement("article");
+    presetDetails.className = "gfp-selected-preset";
 
-  details.append(description, variables);
+    const title = document.createElement("h3");
+    title.textContent = preset.title;
+    const description = document.createElement("p");
+    description.className = "gfp-description";
+    description.textContent = preset.description;
+    const variables = document.createElement("p");
+    variables.className = "gfp-variable gl-text-subtle";
+    variables.textContent = preset.variables.map((variable) => `${variable.key}=${variable.value}`).join("; ");
+
+    presetDetails.append(title, description, variables);
+    details.append(presetDetails);
+  }
   return details;
 }
 

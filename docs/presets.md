@@ -36,7 +36,9 @@ The file is data only. Do not put JavaScript, HTML, shell commands, credentials,
 or tokens in it. The extension rejects incompatible schema versions and invalid
 files without applying a partial preset.
 
-When a preset variable key already exists in a manually-added GitLab field, the
-extension reports the conflict and does not create a duplicate. Selecting a
-different preset or clearing the selection removes only fields previously added
-by the extension.
+Select multiple preset tiles to combine their variables. Click a selected tile
+again to remove its variables. If selected presets use the same key and value,
+the extension adds one field. If they use the same key with different values,
+the extension reports a conflict and leaves the existing selection unchanged.
+The same happens when a key already exists in a manually-added GitLab field.
+Only fields previously added by the extension are changed.

@@ -5,10 +5,10 @@ Status: draft, September 23, 2026.
 ## Purpose
 
 Gitlab Fast Pipe adds presets to GitLab's standard **Run pipeline** page. A
-user selects a branch or tag, selects a preset, and starts the pipeline with
-GitLab's normal button. Presets are JSON in the same repository and selected
-ref. The universal extension contains no corporate GitLab address, project
-name, or corporate-variable list. It supports GitLab.com and compatible
+user selects a branch or tag, selects one or more presets, and starts the
+pipeline with GitLab's normal button. Presets are JSON in the same repository
+and selected ref. The universal extension contains no corporate GitLab address,
+project name, or corporate-variable list. It supports GitLab.com and compatible
 self-managed GitLab after the user grants the specific HTTPS origin access.
 
 ## User flow and UI
@@ -18,21 +18,20 @@ self-managed GitLab after the user grants the specific HTTPS origin access.
    site. Its panel appears automatically on later visits.
 3. The user selects a ref in GitLab's normal field. The extension reads
    `.gitlab-fast-pipe/presets.json` **from that ref** and displays each preset's
-   name, short description, and exact variables.
-4. A selected preset fills GitLab's normal **Variables** fields. The user may
+   names in a compact grid. Descriptions and exact variables appear below the
+   grid for selected presets.
+4. Selected presets fill GitLab's normal **Variables** fields. The user may
    inspect and edit values.
 5. The user starts the pipeline with GitLab's normal **Run pipeline** button.
 
-Place the panel between ref selection and **Variables**. Each button shows its
-name, a one- or two-line description, and all variable values; expand or show a
-multi-variable list before launch. Provide distinct loading, loaded, file
-missing, access denied, and format-error states without covering GitLab's form.
-Provide **Clear selection**, which removes only extension-added fields and
-preserves manual fields. Add no separate start button.
+Place the panel between ref selection and **Variables**. Show preset names in a
+responsive grid; show descriptions and variable values below it for selected
+presets. Each tile toggles independently, so clicking it again deselects it.
+Provide distinct loading, loaded, file missing, access denied, and format-error
+states without covering GitLab's form. Add no separate start button.
 
-Changing project or ref clears the old selection and reloads the file. State
-which project and ref supplied the current presets, and never leave variables
-from an old choice in the form.
+Changing project or ref clears the old selection and reloads the file. Never
+leave variables from an old choice in the form.
 
 ## Preset file
 
@@ -76,9 +75,12 @@ commands, launch URLs, or secrets. The extension does not derive variables from
 
 - Change Variables only after the user selects a preset; loading and rendering
   presets never fills fields.
-- Replacing a preset changes only extension-created fields. Manual fields stay.
-- A preset key matching a manual field is a displayed conflict; do not add a
-  duplicate. The user resolves it before launching.
+- Toggling a preset changes only extension-created fields. Manual fields stay.
+- Combine variables from all selected presets. Identical key/value pairs create
+  one field. A key with differing values across presets is a displayed conflict.
+- A preset key matching a manual field is a displayed conflict. Conflicts keep
+  the prior selection and fields unchanged; do not add a duplicate or partial
+  set. The user resolves the conflict before launching.
 - Values remain visible and editable in GitLab fields; do not hide or mask them.
 - A load or validation failure never applies a partial set, and manual launch
   remains available.
@@ -128,10 +130,10 @@ management after launch, and command execution from JSON.
    other pages.
 2. Only presets from the selected ref are shown; a ref change refreshes and
    clears the old selection.
-3. Title, description, and every `key=value` pair appear before launch. A
-   multi-variable preset creates one set for one pipeline.
-4. Preset changes modify only extension rows; manual rows remain, and conflicts
-   do not create duplicates.
+3. Selected preset titles, descriptions, and every `key=value` pair appear
+   before launch. Multiple presets combine into one set for one pipeline.
+4. Toggling a tile changes only extension rows; manual rows remain. Duplicate
+   key/value pairs create one row, while conflicts cause no partial change.
 5. Missing file, invalid JSON, unsupported schema, access denial, and network
    failure have distinct clear states while manual launch remains possible.
 6. The extension neither presses **Run pipeline** nor calls a launch API.
