@@ -149,6 +149,29 @@ test('shows preset descriptions and variables only for the selected preset', asy
   await expect(details).toHaveCount(0);
 });
 
+test('wraps long preset names inside grid buttons', async ({ page }) => {
+  const title = 'Релизный сервер и Android с дополнительными проверками';
+  const presets = JSON.stringify({ schemaVersion: 1, presets: [
+    { id: 'server', title: 'Server', description: 'Build server', variables: [{ key: 'SERVER', value: '1' }] },
+    { id: 'release', title, description: 'Combined release build', variables: [{ key: 'SERVER', value: 'RELEASE' }] }
+  ] });
+  await openFixture(page, { main: presets });
+  await page.addStyleTag({ path: contentCss });
+  await page.setViewportSize({ width: 420, height: 700 });
+  const button = page.getByRole('button', { name: title });
+  await expect(button).toHaveCSS('white-space', 'normal');
+  const bounds = await button.evaluate((element) => ({
+    scrollWidth: element.scrollWidth,
+    clientWidth: element.clientWidth,
+    height: element.getBoundingClientRect().height,
+    lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight)
+  }));
+  expect(bounds.scrollWidth).toBeLessThanOrEqual(bounds.clientWidth);
+  expect(bounds.height).toBeGreaterThan(bounds.lineHeight * 2);
+  await button.click();
+  expect(await button.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+});
+
 test('reports manual-key conflicts without creating a partial preset', async ({ page }) => {
   await openFixture(page);
   await page.getByTestId('ci-variable-add-button').click();

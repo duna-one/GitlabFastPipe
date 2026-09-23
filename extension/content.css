@@ -44,6 +44,9 @@
   color: var(--gfp-text);
   background: var(--gfp-surface-subtle);
   text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
   transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
 }
 
