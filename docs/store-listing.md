@@ -1,9 +1,9 @@
 # Chrome Web Store listing material
 
-Use this text when creating the first Chrome Web Store item. Replace the
-support URL with the maintained project URL before submission. Use the stable
-public URL for [the privacy policy](privacy.md) in the Store privacy-policy
-field.
+Use this text when creating the first Chrome Web Store item. The public
+[privacy policy](https://github.com/duna-one/GitlabFastPipe/blob/main/docs/privacy.md)
+and [support page](https://github.com/duna-one/GitlabFastPipe/issues) are
+maintained in the project repository.
 
 ## Store name
 
@@ -23,7 +23,8 @@ button.
 Presets are stored as JSON in the same GitLab repository and are read from the
 currently selected ref. This lets teams keep their pipeline choices alongside
 their code without embedding a GitLab address, project name, or corporate
-variables in the extension.
+variables in the extension. Presets can be arranged in named groups and selected
+together; the extension preserves the order defined in the repository.
 
 Gitlab Fast Pipe does not start pipelines by itself. It does not require a
 personal access token and does not collect, transmit, or sell project data,
@@ -51,15 +52,19 @@ or remote code. It does not store passwords, cookies, or personal access tokens.
 
 ### Permissions justification
 
-The extension requests access only to HTTPS GitLab origins explicitly approved
-by the user. That access is required to read the preset file using the user's
-current GitLab session and to add the preset panel to the Run pipeline page.
+`activeTab` lets the user enable the extension on the current Run pipeline tab.
+`scripting` adds the preset panel to that page after the user acts.
+`https://*/*` is an optional host permission because self-managed GitLab can
+run on any HTTPS origin. The extension requests only the current origin after
+the user enables it there. That access lets the extension read the preset file
+with the user's existing GitLab session and show the panel on later visits.
 
 ## Submission assets and fields
 
-- Supply the requested icon and screenshot assets from the release design.
-- Set the support URL to the repository's issue tracker or support page.
-- Set the privacy-policy URL to the stable public rendering of
-  [`docs/privacy.md`](privacy.md).
+- Set the support URL to https://github.com/duna-one/GitlabFastPipe/issues.
+- Set the privacy-policy URL to
+  https://github.com/duna-one/GitlabFastPipe/blob/main/docs/privacy.md.
+- Upload the 128x128 icon, 440x280 small promotional tile, and at least one
+  1280x800 screenshot from `store-assets/`.
 - Select only the Store data-use declarations that match the final manifest and
   implementation. Recheck them after every permission or telemetry change.

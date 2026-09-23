@@ -70,7 +70,7 @@ jobs:
           node <<'NODE'
           const fs = require('node:fs');
           const tag = process.env.GITHUB_REF_NAME;
-          const match = /^v(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$/.exec(tag);
+          const match = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(tag);
           if (!match) throw new Error(`Tag must be vX.Y.Z; received ${tag}`);
           const expected = tag.slice(1);
           const packageVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
@@ -99,12 +99,127 @@ jobs:
           EXTENSION_ID: ${{ vars.CHROME_WEB_STORE_EXTENSION_ID }}
         shell: bash
         run: |
-          curl --fail-with-body --silent --show-error \
+          response_file="$(mktemp)"
+          trap 'rm -f "${response_file}"' EXIT
+          expected_name="publishers/${PUBLISHER_ID}/items/${EXTENSION_ID}"
+          expected_version="${GITHUB_REF_NAME#v}"
+
+          curl --fail --silent --show-error \
             --request POST \
             --header "Authorization: Bearer ${ACCESS_TOKEN}" \
             --header "Content-Type: application/zip" \
             --upload-file "${PACKAGE_PATH}" \
+            --output "${response_file}" \
             "https://chromewebstore.googleapis.com/upload/v2/publishers/${PUBLISHER_ID}/items/${EXTENSION_ID}:upload"
+
+          export RESPONSE_FILE="${response_file}"
+          export EXPECTED_NAME="${expected_name}"
+          export EXPECTED_ITEM_ID="${EXTENSION_ID}"
+          export EXPECTED_VERSION="${expected_version}"
+          upload_state="$(node <<'NODE'
+          const fs = require('node:fs');
+
+          function readResponse() {
+            try {
+              const value = JSON.parse(fs.readFileSync(process.env.RESPONSE_FILE, 'utf8'));
+              if (!value || Array.isArray(value) || typeof value !== 'object') {
+                throw new Error('response is not a JSON object');
+              }
+              return value;
+            } catch (error) {
+              throw new Error(`Chrome Web Store upload returned invalid JSON: ${error.message}`);
+            }
+          }
+
+          const response = readResponse();
+          if (response.name !== process.env.EXPECTED_NAME || response.itemId !== process.env.EXPECTED_ITEM_ID) {
+            throw new Error('Chrome Web Store upload response is for an unexpected item');
+          }
+          if (typeof response.uploadState !== 'string') {
+            throw new Error('Chrome Web Store upload response has no uploadState');
+          }
+          if (response.uploadState === 'SUCCEEDED'
+              && response.crxVersion !== process.env.EXPECTED_VERSION) {
+            throw new Error('Chrome Web Store upload response has an unexpected crxVersion');
+          }
+          process.stdout.write(response.uploadState);
+          NODE
+          )"
+
+          case "${upload_state}" in
+            SUCCEEDED)
+              echo "Chrome Web Store upload succeeded."
+              ;;
+            IN_PROGRESS)
+              echo "Chrome Web Store upload is being processed; waiting for completion."
+              upload_succeeded=false
+              for attempt in $(seq 1 12); do
+                sleep 5
+                curl --fail --silent --show-error \
+                  --header "Authorization: Bearer ${ACCESS_TOKEN}" \
+                  --output "${response_file}" \
+                  "https://chromewebstore.googleapis.com/v2/publishers/${PUBLISHER_ID}/items/${EXTENSION_ID}:fetchStatus"
+
+                upload_state="$(node <<'NODE'
+                const fs = require('node:fs');
+
+                function readResponse() {
+                  try {
+                    const value = JSON.parse(fs.readFileSync(process.env.RESPONSE_FILE, 'utf8'));
+                    if (!value || Array.isArray(value) || typeof value !== 'object') {
+                      throw new Error('response is not a JSON object');
+                    }
+                    return value;
+                  } catch (error) {
+                    throw new Error(`Chrome Web Store fetchStatus returned invalid JSON: ${error.message}`);
+                  }
+                }
+
+                const response = readResponse();
+                if (response.name !== process.env.EXPECTED_NAME || response.itemId !== process.env.EXPECTED_ITEM_ID) {
+                  throw new Error('Chrome Web Store fetchStatus response is for an unexpected item');
+                }
+                if (typeof response.lastAsyncUploadState !== 'string') {
+                  throw new Error('Chrome Web Store fetchStatus response has no lastAsyncUploadState');
+                }
+                process.stdout.write(response.lastAsyncUploadState);
+          NODE
+          )"
+
+                case "${upload_state}" in
+                  SUCCEEDED)
+                    upload_succeeded=true
+                    echo "Chrome Web Store upload succeeded after ${attempt} status checks."
+                    break
+                    ;;
+                  IN_PROGRESS)
+                    echo "Chrome Web Store upload is still being processed (${attempt}/12)."
+                    ;;
+                  FAILED|NOT_FOUND)
+                    echo "Chrome Web Store upload did not succeed (state: ${upload_state})." >&2
+                    exit 1
+                    ;;
+                  *)
+                    echo "Chrome Web Store returned an unknown upload state: ${upload_state}." >&2
+                    exit 1
+                    ;;
+                esac
+              done
+
+              if [[ "${upload_succeeded}" != true ]]; then
+                echo "Chrome Web Store upload did not finish after 12 status checks." >&2
+                exit 1
+              fi
+              ;;
+            FAILED|NOT_FOUND)
+              echo "Chrome Web Store upload did not succeed (state: ${upload_state})." >&2
+              exit 1
+              ;;
+            *)
+              echo "Chrome Web Store returned an unknown upload state: ${upload_state}." >&2
+              exit 1
+              ;;
+          esac
 
       - name: Submit package for Chrome Web Store publication
         env:
@@ -113,9 +228,42 @@ jobs:
           EXTENSION_ID: ${{ vars.CHROME_WEB_STORE_EXTENSION_ID }}
         shell: bash
         run: |
-          curl --fail-with-body --silent --show-error \
+          response_file="$(mktemp)"
+          trap 'rm -f "${response_file}"' EXIT
+          expected_name="publishers/${PUBLISHER_ID}/items/${EXTENSION_ID}"
+
+          curl --fail --silent --show-error \
             --request POST \
             --header "Authorization: Bearer ${ACCESS_TOKEN}" \
             --header "Content-Type: application/json" \
             --data '{"publishType":"DEFAULT_PUBLISH","blockOnWarnings":true}' \
+            --output "${response_file}" \
             "https://chromewebstore.googleapis.com/v2/publishers/${PUBLISHER_ID}/items/${EXTENSION_ID}:publish"
+
+          export RESPONSE_FILE="${response_file}"
+          export EXPECTED_NAME="${expected_name}"
+          export EXPECTED_ITEM_ID="${EXTENSION_ID}"
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          function readResponse() {
+            try {
+              const value = JSON.parse(fs.readFileSync(process.env.RESPONSE_FILE, 'utf8'));
+              if (!value || Array.isArray(value) || typeof value !== 'object') {
+                throw new Error('response is not a JSON object');
+              }
+              return value;
+            } catch (error) {
+              throw new Error(`Chrome Web Store publish returned invalid JSON: ${error.message}`);
+            }
+          }
+
+          const response = readResponse();
+          if (response.name !== process.env.EXPECTED_NAME || response.itemId !== process.env.EXPECTED_ITEM_ID) {
+            throw new Error('Chrome Web Store publish response is for an unexpected item');
+          }
+          if (!['PENDING_REVIEW', 'STAGED', 'PUBLISHED', 'PUBLISHED_TO_TESTERS'].includes(response.state)) {
+            throw new Error(`Chrome Web Store publish was not accepted (state: ${response.state ?? 'missing'})`);
+          }
+          console.log(`Chrome Web Store accepted the submission (state: ${response.state}).`);
+          NODE
