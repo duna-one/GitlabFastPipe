@@ -1,4 +1,4 @@
-name: Release to Chrome Web Store
+name: Release Gitlab Fast Pipe
 
 on:
   push:
@@ -7,10 +7,9 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
-  group: chrome-web-store-release
+  group: gitlab-fast-pipe-release
   cancel-in-progress: false
 
 env:
@@ -18,11 +17,10 @@ env:
   PACKAGE_PATH: gitlab-fast-pipe.zip
 
 jobs:
-  release:
-    name: Verify, package, and submit
+  verify:
+    name: Verify and package
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    environment: chrome-web-store
 
     steps:
       - uses: actions/checkout@v7
@@ -82,6 +80,93 @@ jobs:
             throw new Error(`Package was not created: ${process.env.PACKAGE_PATH}`);
           }
           NODE
+
+      - name: Upload release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: ${{ env.PACKAGE_PATH }}
+          if-no-files-found: error
+
+  github_release:
+    name: Create GitHub Release
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release package
+        uses: actions/download-artifact@v4
+        with:
+          name: release-package
+          path: .
+
+      - name: Create or verify GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          repository="${GITHUB_REPOSITORY}"
+
+          if ! gh release view "${tag}" --repo "${repository}" >/dev/null 2>&1; then
+            gh release create "${tag}" "${PACKAGE_PATH}" \
+              --repo "${repository}" \
+              --verify-tag \
+              --generate-notes
+            exit 0
+          fi
+
+          if ! asset_names="$(gh release view "${tag}" --repo "${repository}" --json assets \
+              --jq '.assets[].name')"; then
+            echo "Could not read assets from the existing GitHub Release." >&2
+            exit 1
+          fi
+          if ! grep -Fxq "${PACKAGE_PATH}" <<< "${asset_names}"; then
+            gh release upload "${tag}" "${PACKAGE_PATH}" --repo "${repository}"
+          else
+            artifact_directory="$(mktemp -d)"
+            trap 'rm -rf "${artifact_directory}"' EXIT
+            gh release download "${tag}" \
+              --repo "${repository}" \
+              --pattern "${PACKAGE_PATH}" \
+              --dir "${artifact_directory}"
+            expected_sha256="$(sha256sum "${PACKAGE_PATH}" | awk '{print $1}')"
+            existing_sha256="$(sha256sum "${artifact_directory}/${PACKAGE_PATH}" | awk '{print $1}')"
+            if [[ "${expected_sha256}" != "${existing_sha256}" ]]; then
+              echo "GitHub Release already has ${PACKAGE_PATH} with different contents." >&2
+              exit 1
+            fi
+            echo "GitHub Release already contains the verified package."
+          fi
+
+          if ! is_draft="$(gh release view "${tag}" --repo "${repository}" --json isDraft --jq '.isDraft')"; then
+            echo "Could not read the existing GitHub Release state." >&2
+            exit 1
+          fi
+          if [[ "${is_draft}" == true ]]; then
+            gh release edit "${tag}" --repo "${repository}" --draft=false
+          fi
+
+  store:
+    name: Submit to Chrome Web Store
+    needs: [verify, github_release]
+    if: vars.CHROME_WEB_STORE_AUTOPUBLISH == 'true' && github.ref_name != 'v0.1.0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    environment: chrome-web-store
+
+    steps:
+      - name: Download release package
+        uses: actions/download-artifact@v4
+        with:
+          name: release-package
+          path: .
 
       - name: Authenticate to Google Cloud through GitHub OIDC
         id: auth
