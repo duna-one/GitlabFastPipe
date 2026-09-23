@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Gitlab Fast Pipe",
+  "short_name": "Fast Pipe",
+  "description": "Choose repository-defined presets on the standard GitLab Run pipeline page.",
+  "version": "0.1.0",
+  "permissions": ["activeTab", "scripting"],
+  "optional_host_permissions": ["https://*/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_title": "Enable Gitlab Fast Pipe for this GitLab site" },
+  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" }
+}

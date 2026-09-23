@@ -1,0 +1,121 @@
+name: Release to Chrome Web Store
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: chrome-web-store-release
+  cancel-in-progress: false
+
+env:
+  MANIFEST_PATH: dist/manifest.json
+  PACKAGE_PATH: gitlab-fast-pipe.zip
+
+jobs:
+  release:
+    name: Verify, package, and submit
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: chrome-web-store
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser test
+        run: npm run test:browser
+
+      - name: Build
+        run: npm run build
+
+      - name: Package
+        run: npm run package
+
+      - name: Verify package
+        run: npm run check:zip
+
+      - name: Verify release versions
+        shell: bash
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          release_commit="$(git rev-parse "${GITHUB_REF}^{commit}")"
+          git merge-base --is-ancestor "${release_commit}" origin/main
+          node <<'NODE'
+          const fs = require('node:fs');
+          const tag = process.env.GITHUB_REF_NAME;
+          const match = /^v(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$/.exec(tag);
+          if (!match) throw new Error(`Tag must be vX.Y.Z; received ${tag}`);
+          const expected = tag.slice(1);
+          const packageVersion = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+          const manifestVersion = JSON.parse(fs.readFileSync(process.env.MANIFEST_PATH, 'utf8')).version;
+          if (packageVersion !== expected || manifestVersion !== expected) {
+            throw new Error(`Version mismatch: tag=${expected}, package=${packageVersion}, manifest=${manifestVersion}`);
+          }
+          if (!fs.existsSync(process.env.PACKAGE_PATH)) {
+            throw new Error(`Package was not created: ${process.env.PACKAGE_PATH}`);
+          }
+          NODE
+
+      - name: Authenticate to Google Cloud through GitHub OIDC
+        id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GOOGLE_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GOOGLE_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+
+      - name: Upload package to Chrome Web Store
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          PUBLISHER_ID: ${{ vars.CHROME_WEB_STORE_PUBLISHER_ID }}
+          EXTENSION_ID: ${{ vars.CHROME_WEB_STORE_EXTENSION_ID }}
+        shell: bash
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${ACCESS_TOKEN}" \
+            --header "Content-Type: application/zip" \
+            --upload-file "${PACKAGE_PATH}" \
+            "https://chromewebstore.googleapis.com/upload/v2/publishers/${PUBLISHER_ID}/items/${EXTENSION_ID}:upload"
+
+      - name: Submit package for Chrome Web Store publication
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          PUBLISHER_ID: ${{ vars.CHROME_WEB_STORE_PUBLISHER_ID }}
+          EXTENSION_ID: ${{ vars.CHROME_WEB_STORE_EXTENSION_ID }}
+        shell: bash
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header "Authorization: Bearer ${ACCESS_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --data '{"publishType":"DEFAULT_PUBLISH","blockOnWarnings":true}' \
+            "https://chromewebstore.googleapis.com/v2/publishers/${PUBLISHER_ID}/items/${EXTENSION_ID}:publish"

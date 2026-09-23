@@ -1,0 +1,30 @@
+name: Bug report
+description: Report incorrect extension behavior.
+title: "bug: "
+labels: [bug]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Do not include private project data, cookies, or tokens.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open ...\\n2. Select ...\\n3. Observe ..."
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Extension version
+    validations:
+      required: true
+  - type: input
+    id: gitlab
+    attributes:
+      label: GitLab version or hosting type
+      placeholder: GitLab.com or self-managed version

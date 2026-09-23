@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "presets": [
+    {
+      "id": "server",
+      "title": "Server",
+      "description": "Build the server components.",
+      "variables": [
+        { "key": "SERVER", "value": "1" }
+      ]
+    },
+    {
+      "id": "server-android",
+      "title": "Server and Android",
+      "description": "Run both build groups in one pipeline.",
+      "variables": [
+        { "key": "SERVER", "value": "1" },
+        { "key": "ANDROID", "value": "1" }
+      ]
+    }
+  ]
+}
