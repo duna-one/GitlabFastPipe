@@ -70,7 +70,7 @@ export function renderPanel(panel: HTMLElement, state: PanelState, actions: Pane
   const focusWasOnClear = focusWasInsidePanel && (focusedElement as HTMLElement).classList.contains("gfp-clear");
 
   panel.replaceChildren();
-  panel.append(createHeading(state));
+  panel.append(createHeading());
 
   if (state.kind === "loaded") {
     panel.append(createLoadedContent(state, actions));
@@ -113,19 +113,14 @@ export function findVariablesSection(page: ParentNode = document): HTMLElement |
   return null;
 }
 
-/**
- * <summary>Builds the panel title and identifies the ref whose presets are displayed.</summary>
- */
-function createHeading(state: PanelState): HTMLElement {
+/** <summary>Builds the panel title.</summary> */
+function createHeading(): HTMLElement {
   const header = document.createElement("header");
   const title = document.createElement("h2");
   title.id = PANEL_TITLE_ID;
   title.tabIndex = -1;
   title.textContent = "GitLab Fast Pipe";
-  const context = document.createElement("p");
-  context.className = "gfp-context";
-  context.textContent = `${state.projectPath} · ${state.ref}`;
-  header.append(title, context);
+  header.append(title);
   return header;
 }
 
@@ -151,27 +146,34 @@ function createLoadedContent(state: Extract<PanelState, { kind: "loaded" }>, act
     content.append(unsupported);
   }
 
-  for (const [index, preset] of state.presets.entries()) {
-    content.append(createPresetButton(preset, index, preset.id === state.selectedPresetId, actions));
+  const presets = document.createElement("div");
+  presets.className = "gfp-presets";
+  for (const preset of state.presets) {
+    presets.append(createPresetButton(preset, preset.id === state.selectedPresetId, actions));
+  }
+  content.append(presets);
+
+  const selectedPreset = state.selectedPresetId
+    ? state.presets.find((preset) => preset.id === state.selectedPresetId)
+    : undefined;
+  if (selectedPreset) {
+    content.append(createSelectedPresetDetails(selectedPreset));
   }
 
   const clear = document.createElement("button");
   clear.type = "button";
-  clear.className = "gfp-clear btn btn-default gl-mt-3";
+  clear.className = "gfp-clear btn btn-default";
   clear.textContent = "Clear selection";
   clear.disabled = !state.selectedPresetId;
   clear.addEventListener("click", actions.onClear);
   content.append(clear);
 
-  if (state.selectedPresetId) {
-    const selectedPreset = state.presets.find((preset) => preset.id === state.selectedPresetId);
-    if (selectedPreset) {
-      const status = document.createElement("p");
-      status.className = "gfp-status";
-      status.setAttribute("role", "status");
-      status.textContent = `Preset selected: ${selectedPreset.title}.`;
-      content.append(status);
-    }
+  if (selectedPreset) {
+    const status = document.createElement("p");
+    status.className = "gfp-selection-status";
+    status.setAttribute("role", "status");
+    status.textContent = `Preset selected: ${selectedPreset.title}.`;
+    content.append(status);
   }
   return content;
 }
@@ -179,28 +181,37 @@ function createLoadedContent(state: Extract<PanelState, { kind: "loaded" }>, act
 /**
  * <summary>Creates one preset control using text nodes for all remote configuration.</summary>
  */
-function createPresetButton(preset: PipelinePreset, index: number, selected: boolean, actions: PanelActions): HTMLElement {
+function createPresetButton(preset: PipelinePreset, selected: boolean, actions: PanelActions): HTMLElement {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "gfp-preset btn btn-default gl-display-block gl-text-left gl-mb-3";
+  button.className = "gfp-preset btn btn-default";
   button.dataset.gitlabFastPipePresetId = preset.id;
   button.setAttribute("aria-pressed", String(selected));
   button.setAttribute("aria-label", preset.title);
 
   const title = document.createElement("strong");
   title.textContent = preset.title;
-  const description = document.createElement("span");
-  description.id = `gfp-description-${index}`;
-  description.className = "gfp-description gl-display-block";
-  description.textContent = preset.description;
-  button.setAttribute("aria-describedby", description.id);
-  const variables = document.createElement("span");
-  variables.className = "gfp-variable gl-display-block gl-text-subtle";
-  variables.textContent = preset.variables.map((variable) => `${variable.key}=${variable.value}`).join("; ");
-
-  button.append(title, description, variables);
+  button.append(title);
   button.addEventListener("click", () => actions.onSelect(preset));
   return button;
+}
+
+/**
+ * <summary>Creates safe text details for the selected preset.</summary>
+ */
+function createSelectedPresetDetails(preset: PipelinePreset): HTMLElement {
+  const details = document.createElement("div");
+  details.className = "gfp-selected-details";
+
+  const description = document.createElement("p");
+  description.className = "gfp-description";
+  description.textContent = preset.description;
+  const variables = document.createElement("p");
+  variables.className = "gfp-variable gl-text-subtle";
+  variables.textContent = preset.variables.map((variable) => `${variable.key}=${variable.value}`).join("; ");
+
+  details.append(description, variables);
+  return details;
 }
 
 /**

@@ -101,6 +101,54 @@ test('applies native variable rows and clears only extension-owned rows', async 
   expect(await page.evaluate(() => (window as typeof window & { pipelineSubmissions: number }).pipelineSubmissions)).toBe(0);
 });
 
+test('shows preset descriptions and variables only for the selected preset', async ({ page }) => {
+  await openFixture(page);
+  await page.addStyleTag({ path: contentCss });
+  const panel = page.locator('#gfp-root');
+  const grid = panel.locator('.gfp-presets');
+  const cards = grid.getByRole('button');
+  const details = panel.locator('.gfp-selected-details');
+
+  await expect(panel.locator('.gfp-context')).toHaveCount(0);
+  await expect(details).toHaveCount(0);
+  await expect(cards).toHaveCount(2);
+  for (const [title, description, variable] of [
+    ['Server', 'Build server', 'SERVER=1'],
+    ['Android', 'Build Android', 'ANDROID=1']
+  ] as const) {
+    const card = grid.getByRole('button', { name: title, exact: true });
+    await expect(card).toBeVisible();
+    await expect(card).not.toContainText(description);
+    await expect(card).not.toContainText(variable);
+  }
+
+  const desktopColumns = await grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+  expect(await grid.evaluate((element) => getComputedStyle(element).display)).toBe('grid');
+  expect(desktopColumns).toBeGreaterThanOrEqual(2);
+
+  await grid.getByRole('button', { name: 'Server', exact: true }).click();
+  expect(await details.evaluate((element) => element.previousElementSibling?.classList.contains('gfp-presets'))).toBe(true);
+  await expect(details).toContainText('Build server');
+  await expect(details).toContainText('SERVER=1');
+  await expect(details).toContainText('REGION=GL');
+  for (const [title, description, variable] of [
+    ['Server', 'Build server', 'SERVER=1'],
+    ['Android', 'Build Android', 'ANDROID=1']
+  ] as const) {
+    const card = grid.getByRole('button', { name: title, exact: true });
+    await expect(card).not.toContainText(description);
+    await expect(card).not.toContainText(variable);
+  }
+
+  await page.setViewportSize({ width: 360, height: 800 });
+  const narrowColumns = await grid.evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(' ').length);
+  expect(narrowColumns).toBe(1);
+  await expect(grid).toHaveCSS('display', 'grid');
+
+  await page.getByRole('button', { name: 'Clear selection' }).click();
+  await expect(details).toHaveCount(0);
+});
+
 test('reports manual-key conflicts without creating a partial preset', async ({ page }) => {
   await openFixture(page);
   await page.getByTestId('ci-variable-add-button').click();
@@ -214,7 +262,7 @@ test('clears owned rows before a dropdown ref change while keeping manual values
   await page.getByRole('button', { name: /Server/ }).click();
   await expect(page.locator('[data-gitlab-fast-pipe-owned="true"]')).toHaveCount(2);
   await page.getByRole('menuitem', { name: 'feature' }).click();
-  await expect(page.locator('#gfp-root .gfp-context')).toContainText('feature');
+  await expect(page.locator('#gfp-root .gfp-context')).toHaveCount(0);
   await expect(page.locator('[data-gitlab-fast-pipe-owned="true"]')).toHaveCount(0);
   await expect(page.getByTestId('ci-variable-row').first().getByTestId('pipeline-form-ci-variable-key')).toHaveValue('MANUAL');
   await expect(page.getByTestId('ci-variable-row')).toHaveCount(2);
