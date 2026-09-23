@@ -14,6 +14,7 @@ export interface PresetsFetchOptions {
 }
 
 interface MinimalDocument {
+  /** <summary>Finds a page metadata or ref element by CSS selector.</summary> */
   querySelector(selector: string): Element | null;
 }
 

@@ -12,7 +12,9 @@ export type PanelState =
 
 /** Callbacks for user actions within the extension panel. */
 export interface PanelActions {
+  /** <summary>Handles a user selecting one preset.</summary> */
   onSelect(preset: PipelinePreset): void;
+  /** <summary>Handles a user clearing extension-owned variables.</summary> */
   onClear(): void;
 }
 
